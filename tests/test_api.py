@@ -21,7 +21,7 @@ HEADER = (
 )
 SELECT = (
     '<select multiple="" name="measuresSel[]" id="measuresSel" onchange="x();">'
-    '\n\t\t<option value="23021" selected="selected">P1  / 2 / A / Energia/Consumo '
+    '\n\t\t<option value="12345" selected="selected">P1  / 2 / A / Energia/Consumo '
     "Calef</option>\n</select>"
     '<select name="other"><option value="1">Año</option></select>'
 )
@@ -47,7 +47,7 @@ def test_parse_meters() -> None:
     """Only the options of the meters select count."""
     meters = parse_meters(SELECT)
     assert [(m.meter_id, m.name) for m in meters] == [
-        ("23021", "P1 / 2 / A / Energia/Consumo Calef")
+        ("12345", "P1 / 2 / A / Energia/Consumo Calef")
     ]
     assert parse_meters("<html></html>") == []
 
