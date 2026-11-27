@@ -65,7 +65,7 @@ The sensors deliberately have no *state class*: they are for display only and do
 - It logs in to the website like a browser and uses the website's own data endpoint (`getStatisticData.php`).
 - It checks hourly, but skips the website while it holds a reading less than 6 hours old.
 - Every sync rewrites the last 31 days: a reading that reaches GestioHome late, even for a past day, lands on its real day.
-- If a meter reading goes down (meter replaced or reset), nothing is subtracted and the new value becomes the baseline.
+- If a meter reading drops by more than 10 % (meter replaced or reset), nothing is subtracted and the new value becomes the baseline. A smaller drop is a correction of the meter and is subtracted, as the website does.
 
 ## License
 

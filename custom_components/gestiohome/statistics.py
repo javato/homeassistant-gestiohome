@@ -39,6 +39,9 @@ _LOGGER = logging.getLogger(__name__)
 EPOCH = datetime(1970, 1, 1, tzinfo=dt_util.UTC)
 # decimals kept in values (hot water meters read litres: 0.001 m³)
 DECIMALS = 6
+# a reading below this share of the previous one is a meter reset (as in
+# the recorder for total_increasing sensors); a smaller drop is a correction
+RESET_RATIO = 0.9
 
 
 def make_stat_id(integration_id: str, suffix: str) -> str:
@@ -136,8 +139,10 @@ async def clear_statistics(
 def continuous_counter(readings: list[Reading]) -> list[tuple[float, float]]:
     """Return (UTC timestamp, total consumed so far) for each reading.
 
-    The total only grows: a reading below the previous one (a replaced or reset
-    meter) adds nothing and becomes the new baseline.
+    Like Home Assistant does with ``total_increasing`` sensors, a reading that
+    drops by more than 10 % is a replaced or reset meter: it adds nothing and
+    becomes the new baseline. A smaller drop is a correction of the meter and
+    is subtracted, as the GestioHome web does.
     """
 
     points: list[tuple[float, float]] = []
@@ -145,11 +150,11 @@ def continuous_counter(readings: list[Reading]) -> list[tuple[float, float]]:
     previous: float | None = None
     for reading in readings:
         if previous is not None:
-            if reading.value >= previous:
+            if reading.value >= RESET_RATIO * previous:
                 total += reading.value - previous
             else:
                 _LOGGER.warning(
-                    "Meter reading went down at %s (%s -> %s), taking it as a reset",
+                    "Meter reading dropped at %s (%s -> %s), taking it as a reset",
                     reading.datetime,
                     previous,
                     reading.value,
