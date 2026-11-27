@@ -20,45 +20,44 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import CONF_METERS, SUPPLIES, Supply
-from .coordinator import GestioHomeConfigEntry, GestioHomeCoordinator, SupplyData
+from .coordinator import GestioHomeConfigEntry, GestioHomeCoordinator, MeterData
 from .entity import GestioHomeEntity
+from .statistics import unit_info
 
 PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
-class SupplySensorDescription(SensorEntityDescription):
-    """Describes a sensor of one supply."""
+class MeterSensorDescription(SensorEntityDescription):
+    """Describes a sensor of one meter."""
 
-    value_fn: Callable[[SupplyData], Any]
-    attrs_fn: Callable[[SupplyData], dict[str, Any]] = lambda _: {}
+    value_fn: Callable[[MeterData], Any]
+    attrs_fn: Callable[[MeterData], dict[str, Any]] = lambda _: {}
 
 
-SUPPLY_SENSORS: tuple[SupplySensorDescription, ...] = (
-    SupplySensorDescription(
+METER_SENSORS: tuple[MeterSensorDescription, ...] = (
+    MeterSensorDescription(
         key="reading",
         value_fn=lambda d: d.last_reading.value if d.last_reading else None,
         attrs_fn=lambda d: {
             "reading_datetime": d.last_reading.datetime if d.last_reading else None,
-            "meter_id": d.meter.meter_id,
-            "meter_name": d.meter.name,
+            "meter_id": d.meter_id,
             "statistic_id": d.stat_id,
         },
         suggested_display_precision=3,
     ),
-    SupplySensorDescription(
+    MeterSensorDescription(
         key="last_day",
         value_fn=lambda d: d.last_day,
         attrs_fn=lambda d: {"date": d.last_day_date},
         suggested_display_precision=3,
     ),
-    SupplySensorDescription(
+    MeterSensorDescription(
         key="month",
         value_fn=lambda d: d.month,
         suggested_display_precision=3,
     ),
-    SupplySensorDescription(
+    MeterSensorDescription(
         key="last_month",
         value_fn=lambda d: d.last_month,
         suggested_display_precision=3,
@@ -76,10 +75,9 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     entities: list[SensorEntity] = [GestioHomeInfoSensor(coordinator)]
     entities.extend(
-        GestioHomeSupplySensor(coordinator, supply, description)
-        for supply in SUPPLIES
-        if supply.key in entry.data.get(CONF_METERS, {})
-        for description in SUPPLY_SENSORS
+        GestioHomeMeterSensor(coordinator, meter_id, description)
+        for meter_id in coordinator.meters
+        for description in METER_SENSORS
     )
     async_add_entities(entities)
 
@@ -97,7 +95,7 @@ class GestioHomeInfoSensor(GestioHomeEntity, SensorEntity):
 
     @property
     def native_value(self):
-        """Return the time of the newest reading of any supply."""
+        """Return the time of the newest reading of any meter."""
         times = [
             d.last_reading.datetime
             for d in (self.coordinator.data or {}).values()
@@ -111,54 +109,64 @@ class GestioHomeInfoSensor(GestioHomeEntity, SensorEntity):
         return {
             "dwelling": self.coordinator.dwelling,
             "statistic_ids": [
-                d.stat_id for d in (self.coordinator.data or {}).values()
+                self.coordinator.stat_id(meter_id)
+                for meter_id in self.coordinator.meters
             ],
         }
 
 
-class GestioHomeSupplySensor(GestioHomeEntity, SensorEntity):
-    """A value of one supply (domestic hot water, heating or cooling)."""
+class GestioHomeMeterSensor(GestioHomeEntity, SensorEntity):
+    """A value of one meter, named after the name the user gave it."""
 
-    entity_description: SupplySensorDescription
+    entity_description: MeterSensorDescription
 
     def __init__(
         self,
         coordinator: GestioHomeCoordinator,
-        supply: Supply,
-        description: SupplySensorDescription,
+        meter_id: str,
+        description: MeterSensorDescription,
     ) -> None:
         """Initialize the sensor."""
 
-        super().__init__(coordinator, f"{supply.key}_{description.key}")
+        super().__init__(coordinator, f"{meter_id}_{description.key}")
         self.entity_description = description
-        self._supply = supply
-        self._attr_translation_key = f"{supply.key}_{description.key}"
-        self._attr_native_unit_of_measurement = supply.unit
-        self._attr_device_class = (
-            SensorDeviceClass.WATER
-            if supply.unit_class == SensorDeviceClass.VOLUME
-            else SensorDeviceClass.ENERGY
-        )
+        self._meter_id = meter_id
+        self._attr_translation_key = description.key
+        self._attr_translation_placeholders = {
+            "meter": coordinator.meters[meter_id]["name"]
+        }
 
     @property
-    def _supply_data(self) -> SupplyData | None:
-        return (self.coordinator.data or {}).get(self._supply.key)
+    def _meter_data(self) -> MeterData | None:
+        return (self.coordinator.data or {}).get(self._meter_id)
 
     @property
     def available(self) -> bool:
-        """Unavailable when the dwelling has no such meter (or no data yet)."""
-        return super().available and self._supply_data is not None
+        """Unavailable until there is data for the meter."""
+        return super().available and self._meter_data is not None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the unit GestioHome gives for the meter."""
+        data = self._meter_data
+        return unit_info(data.unit)[0] if data else None
+
+    @property
+    def device_class(self) -> SensorDeviceClass | None:
+        """Return energy or volume, after the unit."""
+        data = self._meter_data
+        return unit_info(data.unit)[1] if data else None
 
     @property
     def native_value(self):
         """Return the value."""
-        if (data := self._supply_data) is None:
+        if (data := self._meter_data) is None:
             return None
         return self.entity_description.value_fn(data)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the attributes."""
-        if (data := self._supply_data) is None:
+        if (data := self._meter_data) is None:
             return {}
         return self.entity_description.attrs_fn(data)

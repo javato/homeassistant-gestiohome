@@ -7,7 +7,8 @@
     "error": {
       "invalid_auth": "GestioHome ha rechazado el usuario o la contraseña.",
       "cannot_connect": "No se pudo conectar con GestioHome. Revisa la dirección e inténtalo más tarde.",
-      "no_meters": "No se ha encontrado ningún contador (ACS, calor o frío) en esta cuenta.",
+      "no_meters": "GestioHome no muestra ningún contador en esta cuenta.",
+      "no_meter_chosen": "Elige al menos un contador.",
       "unknown": "Error desconocido"
     },
     "step": {
@@ -24,6 +25,17 @@
           "password": "La contraseña de la web de GestioHome."
         }
       },
+      "meters": {
+        "title": "Contadores de {dwelling}",
+        "description": "Estos son los contadores que GestioHome muestra en sus pestañas. Elige los que quieres añadir.",
+        "data": {
+          "meters": "Contadores"
+        }
+      },
+      "names": {
+        "title": "Nombres de los contadores",
+        "description": "Pon un nombre a cada contador. Se usa en sus sensores y su estadística y puedes cambiarlo después; el contador se reconoce siempre por su número."
+      },
       "reauth_confirm": {
         "title": "Volver a autenticar en GestioHome",
         "description": "GestioHome ha rechazado la contraseña de {username}. Escribe la contraseña actual; la integración seguirá donde estaba.",
@@ -31,6 +43,39 @@
           "password": "Contraseña"
         }
       }
+    }
+  },
+  "options": {
+    "abort": {
+      "invalid_auth": "GestioHome ha rechazado el usuario o la contraseña.",
+      "cannot_connect": "No se pudo conectar con GestioHome. Inténtalo más tarde.",
+      "unknown": "Error desconocido"
+    },
+    "error": {
+      "no_meter_chosen": "Elige al menos un contador."
+    },
+    "step": {
+      "init": {
+        "title": "Contadores",
+        "description": "Los contadores que GestioHome muestra ahora. Si desmarcas uno se quitan sus sensores; su estadística se conserva.",
+        "data": {
+          "meters": "Contadores"
+        }
+      },
+      "names": {
+        "title": "Nombres de los contadores",
+        "description": "Pon un nombre a cada contador. Cambiar el nombre no cambia el identificador de su estadística."
+      }
+    }
+  },
+  "issues": {
+    "meter_missing": {
+      "title": "GestioHome ya no muestra el contador {name}",
+      "description": "GestioHome ya no muestra el contador {meter_id} ({name}). Su estadística `{stat_id}` conserva el histórico. Si han cambiado el contador, añade el nuevo en las opciones de la integración (Configurar) y su estadística al panel de Energía; deja también la antigua si el contador nuevo empieza de cero."
+    },
+    "new_meters": {
+      "title": "GestioHome muestra contadores nuevos",
+      "description": "GestioHome muestra contadores para {dwelling} que antes no estaban: {meters}. Añádelos en las opciones de la integración (Configurar) si los quieres."
     }
   },
   "entity": {
@@ -46,41 +91,17 @@
       "info": {
         "name": "Información del suministro"
       },
-      "dhw_reading": {
-        "name": "Lectura contador ACS"
+      "reading": {
+        "name": "Lectura contador {meter}"
       },
-      "dhw_last_day": {
-        "name": "Último consumo registrado ACS"
+      "last_day": {
+        "name": "Último consumo registrado {meter}"
       },
-      "dhw_month": {
-        "name": "Consumo ACS en el mes"
+      "month": {
+        "name": "Consumo {meter} en el mes"
       },
-      "dhw_last_month": {
-        "name": "Consumo ACS durante último mes"
-      },
-      "heating_reading": {
-        "name": "Lectura contador calor"
-      },
-      "heating_last_day": {
-        "name": "Último consumo registrado calor"
-      },
-      "heating_month": {
-        "name": "Consumo calor en el mes"
-      },
-      "heating_last_month": {
-        "name": "Consumo calor durante último mes"
-      },
-      "cooling_reading": {
-        "name": "Lectura contador frío"
-      },
-      "cooling_last_day": {
-        "name": "Último consumo registrado frío"
-      },
-      "cooling_month": {
-        "name": "Consumo frío en el mes"
-      },
-      "cooling_last_month": {
-        "name": "Consumo frío durante último mes"
+      "last_month": {
+        "name": "Consumo {meter} durante último mes"
       }
     }
   }

@@ -7,7 +7,8 @@
     "error": {
       "invalid_auth": "GestioHome rejected the username or password.",
       "cannot_connect": "Could not connect to GestioHome. Check the address and try again later.",
-      "no_meters": "No meter (hot water, heating or cooling) was found on this account.",
+      "no_meters": "GestioHome lists no meter for this account.",
+      "no_meter_chosen": "Choose at least one meter.",
       "unknown": "Unknown error"
     },
     "step": {
@@ -24,6 +25,17 @@
           "password": "The GestioHome website password."
         }
       },
+      "meters": {
+        "title": "Meters of {dwelling}",
+        "description": "These are the meters GestioHome lists on its tabs. Choose the ones to add.",
+        "data": {
+          "meters": "Meters"
+        }
+      },
+      "names": {
+        "title": "Meter names",
+        "description": "Give each meter a name. It is used for its sensors and statistic, and you can change it later; the meter is always recognised by its number."
+      },
       "reauth_confirm": {
         "title": "Re-authenticate with GestioHome",
         "description": "GestioHome rejected the password of {username}. Enter the current password; the integration will carry on where it was.",
@@ -31,6 +43,39 @@
           "password": "Password"
         }
       }
+    }
+  },
+  "options": {
+    "abort": {
+      "invalid_auth": "GestioHome rejected the username or password.",
+      "cannot_connect": "Could not connect to GestioHome. Try again later.",
+      "unknown": "Unknown error"
+    },
+    "error": {
+      "no_meter_chosen": "Choose at least one meter."
+    },
+    "step": {
+      "init": {
+        "title": "Meters",
+        "description": "The meters GestioHome lists now. Untick a meter to remove its sensors; its statistic is kept.",
+        "data": {
+          "meters": "Meters"
+        }
+      },
+      "names": {
+        "title": "Meter names",
+        "description": "Give each meter a name. Renaming a meter does not change its statistic ID."
+      }
+    }
+  },
+  "issues": {
+    "meter_missing": {
+      "title": "GestioHome no longer lists the meter {name}",
+      "description": "GestioHome no longer lists meter {meter_id} ({name}). Its statistic `{stat_id}` keeps its history. If the meter was replaced, add the new one in the integration's options (Configure) and add its statistic to the Energy dashboard; keep the old one there too if the new meter starts from zero."
+    },
+    "new_meters": {
+      "title": "GestioHome lists new meters",
+      "description": "GestioHome lists meters for {dwelling} that were not there before: {meters}. Add them in the integration's options (Configure) if you want them."
     }
   },
   "entity": {
@@ -46,41 +91,17 @@
       "info": {
         "name": "Supply information"
       },
-      "dhw_reading": {
-        "name": "Hot water meter reading"
+      "reading": {
+        "name": "Meter reading {meter}"
       },
-      "dhw_last_day": {
-        "name": "Last recorded hot water consumption"
+      "last_day": {
+        "name": "Last recorded consumption {meter}"
       },
-      "dhw_month": {
-        "name": "Hot water consumption this month"
+      "month": {
+        "name": "Consumption this month {meter}"
       },
-      "dhw_last_month": {
-        "name": "Hot water consumption last month"
-      },
-      "heating_reading": {
-        "name": "Heating meter reading"
-      },
-      "heating_last_day": {
-        "name": "Last recorded heating consumption"
-      },
-      "heating_month": {
-        "name": "Heating consumption this month"
-      },
-      "heating_last_month": {
-        "name": "Heating consumption last month"
-      },
-      "cooling_reading": {
-        "name": "Cooling meter reading"
-      },
-      "cooling_last_day": {
-        "name": "Last recorded cooling consumption"
-      },
-      "cooling_month": {
-        "name": "Cooling consumption this month"
-      },
-      "cooling_last_month": {
-        "name": "Cooling consumption last month"
+      "last_month": {
+        "name": "Consumption last month {meter}"
       }
     }
   }

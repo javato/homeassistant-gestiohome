@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 from homeassistant.components.recorder.statistics import statistics_during_period
 from homeassistant.components.recorder.util import get_instance
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
 )
 
-from custom_components.gestiohome.api import Dwelling
+from custom_components.gestiohome.api import Dwelling, Meter, Readings
 from custom_components.gestiohome.const import DOMAIN
-from custom_components.gestiohome.statistics import day_start, get_last_stat
+from custom_components.gestiohome.statistics import get_last_stat
 
 from .conftest import build_readings
 
@@ -28,8 +27,39 @@ DATA = {
     "password": "secret",
     "code": "12345678TEST9",
     "scode": "est9",
-    "meters": {"heating": ["2", "Heating"]},
 }
+OPTIONS = {"meters": {"2": {"name": "Calor", "stat": "calor_2"}}, "known": ["2"]}
+STAT_ID = "gestiohome:est9_calor_2"
+
+
+def _client(readings, meters=None) -> AsyncMock:
+    client = AsyncMock()
+    client.base_url = "https://test.gestiohome.com/GestioHome/"
+    client.async_discover.return_value = (
+        Dwelling("12345678TEST9", "Test Building"),
+        meters if meters is not None else [Meter("2", "Consumo Calef", "Calor")],
+    )
+    client.async_get_readings.return_value = Readings(readings, "kWh")
+    return client
+
+
+def _entry(**kwargs) -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        version=2,
+        unique_id="12345678TEST9",
+        title="Test Building",
+        data=kwargs.get("data", DATA),
+        options=kwargs.get("options", OPTIONS),
+    )
+
+
+async def _setup(hass: HomeAssistant, entry, client) -> None:
+    entry.add_to_hass(hass)
+    with patch("custom_components.gestiohome.GestioHomeClient", return_value=client):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await async_wait_recording_done(hass)
 
 
 async def test_setup_imports_history(
@@ -37,84 +67,135 @@ async def test_setup_imports_history(
 ) -> None:
     """Setting up imports the readings as statistics and fills the sensors."""
     readings = build_readings(20)
-    client = AsyncMock()
-    client.base_url = "https://test.gestiohome.com/GestioHome/"
-    client.async_login.return_value = Dwelling("12345678TEST9", "Test Building")
-    client.async_get_readings.return_value = readings
-
-    entry = MockConfigEntry(
-        domain=DOMAIN, unique_id="12345678TEST9", title="Test Building", data=DATA
-    )
-    entry.add_to_hass(hass)
-    with patch("custom_components.gestiohome.GestioHomeClient", return_value=client):
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-        await async_wait_recording_done(hass)
+    entry = _entry()
+    await _setup(hass, entry, _client(readings))
 
     assert entry.state is ConfigEntryState.LOADED
-    last_start, last_sum, last_state = await get_last_stat(
-        hass, "gestiohome:est9_heating"
-    )
-    # 19 days of 10 units, one row a day
+    last_start, last_sum, last_state = await get_last_stat(hass, STAT_ID)
+    # 19 readings of 10 units, each in its own hour
     assert last_sum == 190
     assert last_state == 10
-    assert last_start < readings[-1].datetime
+    assert last_start == readings[-1].datetime.replace(minute=0)
 
     registry = er.async_get(hass)
-    entity_id = registry.async_get_entity_id("sensor", DOMAIN, "est9_heating_reading")
-    assert entity_id == "sensor.gestiohome_est9_heating_meter_reading"
+    entity_id = registry.async_get_entity_id("sensor", DOMAIN, "est9_2_reading")
+    assert entity_id == "sensor.gestiohome_est9_meter_reading_calor"
     state = hass.states.get(entity_id)
     assert state is not None
     assert float(state.state) == readings[-1].value
-    assert state.attributes["statistic_id"] == "gestiohome:est9_heating"
+    assert state.attributes["unit_of_measurement"] == "kWh"
+    assert state.attributes["statistic_id"] == STAT_ID
     # no state class: Home Assistant must not build statistics from it
     assert "state_class" not in state.attributes
-    # only the supplies the dwelling has get sensors
-    assert registry.async_get_entity_id("sensor", DOMAIN, "est9_dhw_reading") is None
-
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_late_reading_goes_to_its_day(
+async def test_late_reading_goes_to_its_hour(
     recorder_mock, enable_custom_integrations, hass: HomeAssistant
 ) -> None:
-    """A reading that reaches GestioHome late is written on its own day."""
+    """A reading that reaches GestioHome late is written in its own hour."""
     readings = build_readings(20)
     late = readings[10]
-    client = AsyncMock()
-    client.base_url = "https://test.gestiohome.com/GestioHome/"
-    client.async_get_readings.return_value = [r for r in readings if r is not late]
+    client = _client([r for r in readings if r is not late])
+    entry = _entry()
+    await _setup(hass, entry, client)
 
-    entry = MockConfigEntry(
-        domain=DOMAIN, unique_id="12345678TEST9", title="Test Building", data=DATA
-    )
-    entry.add_to_hass(hass)
+    late_hour = dt_util.as_utc(late.datetime.replace(minute=0))
+    next_hour = dt_util.as_utc(readings[11].datetime.replace(minute=0))
+    before = await _states(hass, STAT_ID)
+    assert late_hour not in before
+    assert before[next_hour] == 20
+
+    # the missing reading shows up later
+    client.async_get_readings.return_value = Readings(readings, "kWh")
     with patch("custom_components.gestiohome.GestioHomeClient", return_value=client):
-        assert await hass.config_entries.async_setup(entry.entry_id)
+        await entry.runtime_data.async_force_sync()
         await hass.async_block_till_done()
         await async_wait_recording_done(hass)
 
-        stat_id = "gestiohome:est9_heating"
-        late_day = day_start(dt_util.as_local(late.datetime).date())
-        before = await _daily_states(hass, stat_id)
-        assert late_day not in before
-        assert before[late_day + timedelta(days=1)] == 20
-
-        # the missing reading shows up later
-        client.async_get_readings.return_value = readings
-        await entry.runtime_data.async_refresh()
-        await hass.async_block_till_done()
-        await async_wait_recording_done(hass)
-
-    after = await _daily_states(hass, stat_id)
-    assert after[late_day] == 10
-    assert after[late_day + timedelta(days=1)] == 10
-    _, last_sum, _ = await get_last_stat(hass, stat_id)
+    after = await _states(hass, STAT_ID)
+    assert after[late_hour] == 10
+    assert after[next_hour] == 10
+    _, last_sum, _ = await get_last_stat(hass, STAT_ID)
     assert last_sum == 190
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def _daily_states(hass: HomeAssistant, stat_id: str) -> dict:
+async def test_missing_and_new_meters_are_reported(
+    recorder_mock, enable_custom_integrations, hass: HomeAssistant
+) -> None:
+    """A chosen meter the web no longer lists, and a new one, raise issues."""
+    entry = _entry()
+    await _setup(
+        hass, entry, _client(build_readings(5), [Meter("9", "Nuevo", "Calor")])
+    )
+    issues = ir.async_get(hass)
+    assert issues.async_get_issue(DOMAIN, f"meter_missing_{entry.entry_id}_2")
+    assert issues.async_get_issue(DOMAIN, f"new_meters_{entry.entry_id}")
+    # nothing changes on its own
+    assert list(entry.options["meters"]) == ["2"]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_repair_keeps_what_cannot_be_rebuilt(
+    recorder_mock, enable_custom_integrations, hass: HomeAssistant
+) -> None:
+    """Repairing only clears a statistic once GestioHome serves its readings."""
+    readings = build_readings(10)
+    client = _client(readings)
+    entry = _entry()
+    await _setup(hass, entry, client)
+    _, before, _ = await get_last_stat(hass, STAT_ID)
+    assert before == 90
+
+    client.async_get_readings.return_value = Readings([], None)
+    with patch("custom_components.gestiohome.GestioHomeClient", return_value=client):
+        await entry.runtime_data.async_soft_reset()
+        await hass.async_block_till_done()
+        await async_wait_recording_done(hass)
+    _, after, _ = await get_last_stat(hass, STAT_ID)
+    assert after == 90
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_migrate_from_version_1(
+    recorder_mock, enable_custom_integrations, hass: HomeAssistant
+) -> None:
+    """Version 1 supplies become meters named after their tab, same entities."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        version=1,
+        unique_id="12345678TEST9",
+        title="Test Building",
+        data={**DATA, "meters": {"heating": ["2", "Consumo Calef"]}},
+    )
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    old = registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        "est9_heating_reading",
+        config_entry=entry,
+        suggested_object_id="gestiohome_est9_lectura_contador_calor",
+    )
+    with patch(
+        "custom_components.gestiohome.GestioHomeClient",
+        return_value=_client(build_readings(5)),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await async_wait_recording_done(hass)
+
+    assert entry.version == 2
+    assert "meters" not in entry.data
+    assert entry.options["meters"] == {"2": {"name": "Calor", "stat": "calor_2"}}
+    migrated = registry.async_get(old.entity_id)
+    assert migrated is not None
+    assert migrated.unique_id == "est9_2_reading"
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def _states(hass: HomeAssistant, stat_id: str) -> dict:
     stats = await get_instance(hass).async_add_executor_job(
         statistics_during_period,
         hass,

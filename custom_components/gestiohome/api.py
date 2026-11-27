@@ -26,6 +26,10 @@ _MEASURES_SELECT = re.compile(
     r"<select[^>]*id=[\"']measuresSel[\"'][^>]*>(.*?)</select>", re.S | re.I
 )
 _OPTION = re.compile(r"<option[^>]*value=[\"'](\d+)[\"'][^>]*>([^<]*)</option>", re.I)
+# the tabs of the web's menu (Calor, Frío, ACS, ...): links to iu*.php pages
+_TAB = re.compile(r"<a[^>]*href=[\"'](iu\w+\.php)[\"'][^>]*>(.*?)</a>", re.S | re.I)
+# a page that sends the browser elsewhere with JavaScript
+_JS_REDIRECT = re.compile(r"document\.location\s*=\s*[\"']([\w./-]+\.php)[\"']")
 
 
 class GestioHomeError(Exception):
@@ -41,11 +45,20 @@ class InvalidAuth(GestioHomeError):
 
 
 @dataclass(frozen=True, slots=True)
+class Tab:
+    """A tab of the web's menu."""
+
+    page: str
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
 class Meter:
-    """A meter of the dwelling."""
+    """A meter of the dwelling, as a tab of the web lists it."""
 
     meter_id: str
     name: str
+    tab: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +67,14 @@ class Reading:
 
     datetime: datetime
     value: float
+
+
+@dataclass(frozen=True, slots=True)
+class Readings:
+    """The readings of a meter, oldest first, and their unit."""
+
+    readings: list[Reading]
+    unit: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,15 +106,38 @@ def parse_dwelling(page: str) -> Dwelling:
     return Dwelling(code=code, name=name)
 
 
-def parse_meters(page: str) -> list[Meter]:
-    """Read the meters a supply page lists."""
+def _text(fragment: str) -> str:
+    return " ".join(html.unescape(_TAG.sub(" ", fragment)).split())
+
+
+def parse_tabs(page: str) -> list[Tab]:
+    """Read the tabs of the web's menu, in order and without repeats."""
+
+    tabs: dict[str, Tab] = {}
+    for href, label in _TAB.findall(page):
+        if href not in tabs:
+            tabs[href] = Tab(href, _text(label) or href)
+    return list(tabs.values())
+
+
+def parse_meters(page: str, tab: str = "") -> list[Meter]:
+    """Read the meters a tab lists (the select the web's chart is drawn from)."""
 
     if not (select := _MEASURES_SELECT.search(page)):
         return []
     return [
-        Meter(meter_id, " ".join(html.unescape(name).split()))
+        Meter(meter_id, _text(name), tab)
         for meter_id, name in _OPTION.findall(select.group(1))
     ]
+
+
+def parse_unit(payload: dict, meter_id: str) -> str | None:
+    """Return the unit a getStatisticData.php answer gives for a meter."""
+
+    series = payload.get(meter_id)
+    if isinstance(series, dict) and isinstance(unit := series.get("seriesUnit"), str):
+        return unit.strip() or None
+    return None
 
 
 def parse_readings(payload: dict, meter_id: str, tz: tzinfo) -> list[Reading]:
@@ -174,9 +218,23 @@ class GestioHomeClient:
         """Log in and return the dwelling; raise InvalidAuth if rejected."""
 
         async with self._lock:
-            return await self._login()
+            return parse_dwelling(await self._login())
 
-    async def _login(self) -> Dwelling:
+    async def _landing(self) -> str:
+        """Return the page the web opens for a logged-in user.
+
+        That is what the app's address answers, following one JavaScript
+        redirect if the web sends one.
+        """
+
+        page = await self._request("GET", "")
+        if (m := _JS_REDIRECT.search(page)) and not _LOGIN_REDIRECT.search(page):
+            page = await self._request("GET", m.group(1))
+        return page
+
+    async def _login(self) -> str:
+        """Log in and return the landing page; raise InvalidAuth if rejected."""
+
         self._logged_in = False
         await self._request("GET", "login.php")  # start the PHP session
         await self._request(
@@ -189,11 +247,11 @@ class GestioHomeClient:
                 "userpass": self._password,
             },
         )
-        page = await self._request("GET", "iuCalor.php")
+        page = await self._landing()
         if _LOGIN_REDIRECT.search(page) or "userpass" in page:
             raise InvalidAuth("GestioHome rejected the credentials")
         self._logged_in = True
-        return parse_dwelling(page)
+        return page
 
     async def _get_logged_in(self, method: str, page: str, data=None) -> str:
         """Request a page, logging in again once if the session expired."""
@@ -210,19 +268,32 @@ class GestioHomeClient:
                     raise CannotConnect(f"{page}: still asks to log in")
             return text
 
-    async def async_get_dwelling(self) -> Dwelling:
-        """Return the dwelling shown by the web."""
+    async def async_discover(self) -> tuple[Dwelling, list[Meter]]:
+        """Return the dwelling and every meter the tabs of the web list.
 
-        return parse_dwelling(await self._get_logged_in("GET", "iuCalor.php"))
+        Nothing about the supplies is assumed: the tabs come from the web's
+        menu, and a tab counts if it lists meters (the others, such as
+        receipts or alarms, list none).
+        """
 
-    async def async_get_meters(self, page: str) -> list[Meter]:
-        """Return the meters a supply page lists (none if the dwelling lacks it)."""
-
-        return parse_meters(await self._get_logged_in("GET", page))
+        async with self._lock:
+            if self._logged_in:
+                landing = await self._landing()
+                if _LOGIN_REDIRECT.search(landing) or "userpass" in landing:
+                    landing = await self._login()
+            else:
+                landing = await self._login()
+        meters: dict[str, Meter] = {}
+        for tab in parse_tabs(landing):
+            for meter in parse_meters(
+                await self._get_logged_in("GET", tab.page), tab.label
+            ):
+                meters.setdefault(meter.meter_id, meter)
+        return parse_dwelling(landing), list(meters.values())
 
     async def async_get_readings(
         self, meter_id: str, start: date, end: date, tz: tzinfo
-    ) -> list[Reading]:
+    ) -> Readings:
         """Return the absolute readings of a meter between two dates (inclusive)."""
 
         text = await self._get_logged_in(
@@ -238,4 +309,6 @@ class GestioHomeClient:
             ) from err
         if not isinstance(payload, dict):
             raise CannotConnect("getStatisticData.php: unexpected answer")
-        return parse_readings(payload, meter_id, tz)
+        return Readings(
+            parse_readings(payload, meter_id, tz), parse_unit(payload, meter_id)
+        )
