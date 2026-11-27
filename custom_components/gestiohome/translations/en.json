@@ -1,0 +1,87 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This dwelling is already configured",
+      "reauth_successful": "Password updated. The integration has been reloaded."
+    },
+    "error": {
+      "invalid_auth": "GestioHome rejected the username or password.",
+      "cannot_connect": "Could not connect to GestioHome. Check the address and try again later.",
+      "no_meters": "No meter (DHW, heating or cooling) was found on this account.",
+      "unknown": "Unknown error"
+    },
+    "step": {
+      "user": {
+        "title": "Connect to GestioHome",
+        "data": {
+          "url": "GestioHome address",
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "url": "Your building's address, e.g. https://mybuilding.gestiohome.com",
+          "username": "The username you use on the GestioHome website.",
+          "password": "The GestioHome website password."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate with GestioHome",
+        "description": "GestioHome rejected the password of {username}. Enter the current password; the integration will carry on where it was.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "soft_reset": {
+        "name": "Repair Home Assistant statistics"
+      },
+      "import_all_data": {
+        "name": "Force sync"
+      }
+    },
+    "sensor": {
+      "info": {
+        "name": "Supply information"
+      },
+      "acs_reading": {
+        "name": "DHW meter reading"
+      },
+      "acs_last_day": {
+        "name": "Last recorded DHW consumption"
+      },
+      "acs_month": {
+        "name": "DHW consumption this month"
+      },
+      "acs_last_month": {
+        "name": "DHW consumption last month"
+      },
+      "calor_reading": {
+        "name": "Heating meter reading"
+      },
+      "calor_last_day": {
+        "name": "Last recorded heating consumption"
+      },
+      "calor_month": {
+        "name": "Heating consumption this month"
+      },
+      "calor_last_month": {
+        "name": "Heating consumption last month"
+      },
+      "frio_reading": {
+        "name": "Cooling meter reading"
+      },
+      "frio_last_day": {
+        "name": "Last recorded cooling consumption"
+      },
+      "frio_month": {
+        "name": "Cooling consumption this month"
+      },
+      "frio_last_month": {
+        "name": "Cooling consumption last month"
+      }
+    }
+  }
+}

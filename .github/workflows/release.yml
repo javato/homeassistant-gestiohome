@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Attach zip to the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set the version in the manifest from the tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          jq --arg v "$version" '.version = $v' custom_components/gestiohome/manifest.json > manifest.tmp
+          mv manifest.tmp custom_components/gestiohome/manifest.json
+      - name: Create zip
+        run: |
+          cd custom_components/gestiohome
+          zip ../../homeassistant-gestiohome.zip -r ./
+      - name: Upload zip to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" homeassistant-gestiohome.zip --clobber

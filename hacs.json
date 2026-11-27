@@ -1,0 +1,8 @@
+{
+  "name": "GestioHome",
+  "render_readme": true,
+  "country": "ES",
+  "homeassistant": "2026.3.0",
+  "zip_release": true,
+  "filename": "homeassistant-gestiohome.zip"
+}
