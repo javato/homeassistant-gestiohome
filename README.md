@@ -69,7 +69,7 @@ The sensors deliberately have no *state class*: they are for display only and do
 
 ### Upgrading from 2026.11.1 or earlier
 
-Existing installs move to the new meters on their own: hot water, heating and cooling become meters named ACS, Calor and Frío, and the sensors keep their entity IDs. The statistics get new IDs (`gestiohome:<id>_calor_<number>`…) with the whole history: switch the Energy dashboard to them. The old ones (`gestiohome:<id>_heating`…) stop growing and can be deleted in Developer tools → Statistics.
+Those versions had fixed supplies. After updating, remove the integration and add it again to choose its meters: it imports the whole history again into the new statistics (`gestiohome:<id>_<name>_<number>`). Switch the Energy dashboard to them; the old ones (`gestiohome:<id>_heating`…) are kept when the integration is removed and can be deleted in Developer tools → Statistics.
 
 ## License
 

@@ -158,10 +158,10 @@ async def test_repair_keeps_what_cannot_be_rebuilt(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_migrate_from_version_1(
+async def test_version_1_must_be_added_again(
     recorder_mock, enable_custom_integrations, hass: HomeAssistant
 ) -> None:
-    """Version 1 supplies become meters named after their tab, same entities."""
+    """Entries of the fixed-supply version are not migrated."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         version=1,
@@ -170,29 +170,8 @@ async def test_migrate_from_version_1(
         data={**DATA, "meters": {"heating": ["2", "Consumo Calef"]}},
     )
     entry.add_to_hass(hass)
-    registry = er.async_get(hass)
-    old = registry.async_get_or_create(
-        "sensor",
-        DOMAIN,
-        "est9_heating_reading",
-        config_entry=entry,
-        suggested_object_id="gestiohome_est9_lectura_contador_calor",
-    )
-    with patch(
-        "custom_components.gestiohome.GestioHomeClient",
-        return_value=_client(build_readings(5)),
-    ):
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-        await async_wait_recording_done(hass)
-
-    assert entry.version == 2
-    assert "meters" not in entry.data
-    assert entry.options["meters"] == {"2": {"name": "Calor", "stat": "calor_2"}}
-    migrated = registry.async_get(old.entity_id)
-    assert migrated is not None
-    assert migrated.unique_id == "est9_2_reading"
-    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.MIGRATION_ERROR
 
 
 async def _states(hass: HomeAssistant, stat_id: str) -> dict:
