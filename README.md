@@ -15,10 +15,11 @@ Sigue la misma estrategia que [e-data](https://github.com/uvejota/homeassistant-
 GestioHome publica las lecturas con retraso (una al día, a horas variables). Un sensor normal haría que Home Assistant apuntase cada consumo a la hora en que se leyó la web, no a cuando ocurrió, y el acumulado mensual de la web se pone a cero cada mes. Esta integración:
 
 - Lee la **lectura absoluta del contador** con su fecha y hora exactas, que nunca se pone a cero.
-- Reparte el consumo entre dos lecturas **por igual entre las horas** que hay entre ellas, así cada día y cada mes se llevan su parte (los últimos días de un mes no acaban en el siguiente).
-- Escribe una fila por hora en `gestiohome:<id>_acs`, `gestiohome:<id>_calor` y `gestiohome:<id>_frio`, con un total que sigue sumando de un mes a otro.
-- Solo escribe una hora cuando ya hay una lectura posterior que la cubre, así nunca hay que corregirla después.
+- Escribe **una fila por día** (a las 00:00) en `gestiohome:<id>_acs`, `gestiohome:<id>_calor` y `gestiohome:<id>_frio`, con un total que sigue sumando de un mes a otro.
+- Cada día se lleva lo que contó el contador desde la lectura anterior, **igual que la web**: los totales diarios y mensuales cuadran con GestioHome.
 - La primera vez importa **todo el histórico** que tenga GestioHome.
+
+A diferencia de Datadis (luz), GestioHome no da consumo por horas, solo una lectura al día. Por eso las estadísticas son diarias: en la vista por horas del Panel de Energía verás todo el consumo del día a medianoche; usa las vistas por día, semana o mes.
 
 ## Instalación
 
@@ -52,19 +53,18 @@ Así quedan separados del consumo eléctrico. El `<id>` son los últimos caracte
 |---|---|
 | Información del suministro | Hora de la última lectura, vivienda y estadísticas creadas |
 | Lectura contador (ACS, calor, frío) | Última lectura absoluta del contador |
-| Último consumo registrado | Consumo del último día completo |
-| Consumo en el mes / durante último mes | Calculado igual que las estadísticas (por horas reales) |
+| Último consumo registrado | Consumo del último día con lectura |
+| Consumo en el mes / durante último mes | Los mismos totales que muestra la web |
 | Reparar estadísticas de Home Assistant (botón) | Borra las estadísticas de la integración y las vuelve a importar enteras |
 | Forzar sincronización (botón) | Vuelve a consultar GestioHome ahora, también los contadores |
 
 Los sensores no tienen *state class* a propósito: son solo para ver los datos y no generan estadísticas con la hora de lectura. Para gráficas usa las estadísticas `gestiohome:...`.
 
-Los totales mensuales pueden diferir un poco de los de la web: la web asigna todo el consumo entre dos lecturas al día de la lectura, y aquí se reparte por horas.
-
 ## Cómo funciona por dentro
 
 - Inicia sesión en la web igual que el navegador y usa su propio servicio de datos (`getStatisticData.php`).
 - Consulta cada hora, pero si ya tiene una lectura de menos de 6 horas no vuelve a preguntar.
+- El último día se vuelve a escribir en cada sincronización, por si llega otra lectura ese mismo día.
 - Si el contador baja (cambio o puesta a cero), no resta nada y toma el nuevo valor como punto de partida.
 
 ## Licencia

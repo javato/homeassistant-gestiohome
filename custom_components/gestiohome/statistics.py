@@ -1,22 +1,20 @@
 """Long-term statistics with the real date of each consumption.
 
 Same strategy as edata: external statistics (``gestiohome:<scode>_<supply>``)
-written with ``async_add_external_statistics``, one row per hour whose
-``state`` is that hour's consumption and ``sum`` the running total. Each sync
-continues from the last recorded hour and its sum, so totals never reset.
+written with ``async_add_external_statistics``, with ``state`` the
+consumption of the period and ``sum`` the running total. Each sync continues
+from the last recorded row and its sum, so totals never reset.
 
 GestioHome serves absolute meter readings (about one a day, at varying times),
-not hourly consumption: the consumption between two readings is spread evenly
-over the hours between them. An hour is only written once a later reading
-covers it, so rows never have to be corrected afterwards.
+not hourly consumption like Datadis. So there is one row per day, at local
+midnight (statistics rows must start on the hour), with what the meter counted
+since the previous reading, assigned to the day of the reading as the web does.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from datetime import datetime, timedelta
+from datetime import date, datetime, time
 import logging
-import math
 
 from homeassistant.components.recorder import util as recorder_util
 from homeassistant.components.recorder.models import (
@@ -37,9 +35,8 @@ from .const import DOMAIN, Supply
 
 _LOGGER = logging.getLogger(__name__)
 
-HOUR = timedelta(hours=1)
 EPOCH = datetime(1970, 1, 1, tzinfo=dt_util.UTC)
-# decimals kept in hourly values (ACS meters read litres: 0.001 m³)
+# decimals kept in values (ACS meters read litres: 0.001 m³)
 DECIMALS = 6
 
 
@@ -61,20 +58,23 @@ def create_metadata(stat_id: str, supply: Supply) -> StatisticMetaData:
     )
 
 
-async def get_last_stat(hass: HomeAssistant, stat_id: str) -> tuple[datetime, float]:
-    """Return the (start, cumulative sum) of the last recorded hour."""
+async def get_last_stat(
+    hass: HomeAssistant, stat_id: str
+) -> tuple[datetime, float, float]:
+    """Return the (start, cumulative sum, state) of the last recorded row."""
 
     recorder = recorder_util.get_instance(hass)
     last_stats = await recorder.async_add_executor_job(
-        get_last_statistics, hass, 1, stat_id, True, {"sum"}
+        get_last_statistics, hass, 1, stat_id, True, {"sum", "state"}
     )
     if not (rows := last_stats.get(stat_id)):
-        return EPOCH, 0.0
+        return EPOCH, 0.0, 0.0
     row = rows[0]
     start = row.get("start")
     return (
         dt_util.utc_from_timestamp(start) if start is not None else EPOCH,
         row.get("sum") or 0.0,
+        row.get("state") or 0.0,
     )
 
 
@@ -134,55 +134,47 @@ def continuous_counter(readings: list[Reading]) -> list[tuple[float, float]]:
     return points
 
 
-def _interpolate(
-    points: list[tuple[float, float]], ts: float, idx: int
-) -> tuple[float, int]:
-    """Return the counter at ``ts`` and the segment index to resume from.
+def daily_consumption(readings: list[Reading]) -> dict[date, float]:
+    """Return the consumption of each local day that has readings.
 
-    ``ts`` must lie within the points and grow between calls.
-    """
-
-    while idx + 1 < len(points) - 1 and points[idx + 1][0] <= ts:
-        idx += 1
-    (t0, c0), (t1, c1) = points[idx], points[idx + 1]
-    if ts >= t1:
-        return c1, idx
-    return c0 + (c1 - c0) * (ts - t0) / (t1 - t0), idx
-
-
-def hourly_consumption(
-    readings: list[Reading], after: datetime
-) -> Iterator[tuple[datetime, float]]:
-    """Yield (hour start, consumption) for each full hour the readings cover.
-
-    Starts with the first hour that begins at or after ``after`` (and at or after
-    the first reading) and ends with the last hour that ends by the last reading.
+    Like the GestioHome web: what the meter counted since the previous reading
+    goes to the day of the new reading. A day without readings gets nothing and
+    the next reading carries it.
     """
 
     points = continuous_counter(readings)
-    if len(points) < 2:
-        return
-    first_ts, last_ts = points[0][0], points[-1][0]
-    start_ts = max(first_ts, after.timestamp())
-    hour = math.ceil(start_ts / 3600) * 3600
-    idx = 0
-    value, idx = _interpolate(points, hour, idx)
-    while hour + 3600 <= last_ts:
-        next_value, idx = _interpolate(points, hour + 3600, idx)
-        yield dt_util.utc_from_timestamp(hour), round(next_value - value, DECIMALS)
-        hour += 3600
-        value = next_value
+    days: dict[date, float] = {}
+    for reading, (_, total), (_, before) in zip(
+        readings[1:], points[1:], points, strict=False
+    ):
+        day = dt_util.as_local(reading.datetime).date()
+        days[day] = days.get(day, 0.0) + total - before
+    return {day: round(value, DECIMALS) for day, value in days.items()}
+
+
+def day_start(day: date) -> datetime:
+    """Return the local midnight starting ``day``, in UTC."""
+    return dt_util.as_utc(
+        datetime.combine(day, time.min, tzinfo=dt_util.get_default_time_zone())
+    )
 
 
 def build_statistics(
-    readings: list[Reading], last_start: datetime, last_sum: float
+    readings: list[Reading], since: datetime, base_sum: float
 ) -> list[StatisticData]:
-    """Return the hourly rows after ``last_start``, continuing ``last_sum``."""
+    """Return one row per day from ``since`` on, at local midnight.
+
+    ``base_sum`` is the running total right before ``since``. The row of the
+    last day is rewritten on later syncs while more readings of that day come
+    in (the recorder overwrites a row with the same start).
+    """
 
     rows: list[StatisticData] = []
-    running = last_sum
-    after = last_start + HOUR if last_start > EPOCH else EPOCH
-    for start, consumption in hourly_consumption(readings, after):
+    running = base_sum
+    for day, consumption in sorted(daily_consumption(readings).items()):
+        start = day_start(day)
+        if start < since:
+            continue
         running += consumption
         rows.append(
             StatisticData(start=start, state=consumption, sum=round(running, DECIMALS))

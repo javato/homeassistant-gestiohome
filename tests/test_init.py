@@ -48,9 +48,12 @@ async def test_setup_imports_history(
         await async_wait_recording_done(hass)
 
     assert entry.state is ConfigEntryState.LOADED
-    last_start, last_sum = await get_last_stat(hass, "gestiohome:est9_calor")
-    # 19 days of 10 units, minus the part of the last hour not yet covered
-    assert 189 < last_sum <= 190
+    last_start, last_sum, last_state = await get_last_stat(
+        hass, "gestiohome:est9_calor"
+    )
+    # 19 days of 10 units, one row a day
+    assert last_sum == 190
+    assert last_state == 10
     assert last_start < readings[-1].datetime
 
     registry = er.async_get(hass)

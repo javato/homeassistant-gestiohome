@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -19,8 +19,8 @@ from .statistics import (
     add_statistics,
     build_statistics,
     clear_statistics,
-    continuous_counter,
     create_metadata,
+    daily_consumption,
     get_integration_stat_ids,
     get_last_stat,
     make_stat_id,
@@ -34,8 +34,8 @@ UPDATE_INTERVAL = timedelta(minutes=60)
 MIN_READING_AGE = timedelta(hours=6)
 # the oldest date asked for on a full import (the web answers what it has)
 HISTORY_START = date(2015, 1, 1)
-# extra days asked for before the last recorded hour, so the reading right
-# before it is always there to interpolate from (readings have gaps)
+# extra days asked for before the last recorded day, so the reading right
+# before it is always there (readings have gaps)
 LOOKBACK = timedelta(days=31)
 
 
@@ -56,51 +56,27 @@ class SupplyData:
 type GestioHomeConfigEntry = ConfigEntry[GestioHomeCoordinator]
 
 
-def _counter_at(points: list[tuple[float, float]], moment: datetime) -> float | None:
-    """Return the interpolated total at ``moment`` (None outside the readings)."""
-
-    ts = moment.timestamp()
-    if not points or ts < points[0][0] or ts > points[-1][0]:
-        return None
-    for (t0, c0), (t1, c1) in zip(points, points[1:], strict=False):
-        if t0 <= ts <= t1:
-            return c0 if t1 == t0 else c0 + (c1 - c0) * (ts - t0) / (t1 - t0)
-    return points[-1][1]
-
-
-def _local_midnight(day: date) -> datetime:
-    return datetime.combine(day, time.min, tzinfo=dt_util.get_default_time_zone())
-
-
 def summarize(readings: list[Reading], now: datetime) -> dict:
-    """Compute the last full day, this month so far and last month."""
+    """Compute the last day with readings, this month and last month.
 
-    points = continuous_counter(readings)
-    if len(points) < 2:
+    Same daily figures as the statistics (and the GestioHome web).
+    """
+
+    days = daily_consumption(readings)
+    if not days:
         return {}
-    last = readings[-1]
-    last_local = dt_util.as_local(last.datetime)
-    today = dt_util.as_local(now).date()
-
-    def between(start: datetime, end: datetime) -> float | None:
-        a, b = _counter_at(points, start), _counter_at(points, end)
-        return None if a is None or b is None else round(b - a, 3)
-
-    last_day_date = last_local.date() - timedelta(days=1)
-    month_start = today.replace(day=1)
+    month_start = dt_util.as_local(now).date().replace(day=1)
     prev_month_start = (month_start - timedelta(days=1)).replace(day=1)
-    month_end = min(last.datetime, now)
+    last_day_date = max(days)
+
+    def total(start: date, end: date) -> float:
+        return round(sum(v for d, v in days.items() if start <= d < end), 3)
+
     return {
         "last_day_date": last_day_date,
-        "last_day": between(
-            _local_midnight(last_day_date), _local_midnight(last_local.date())
-        ),
-        "month": between(_local_midnight(month_start), month_end)
-        if month_end >= _local_midnight(month_start)
-        else None,
-        "last_month": between(
-            _local_midnight(prev_month_start), _local_midnight(month_start)
-        ),
+        "last_day": round(days[last_day_date], 3),
+        "month": total(month_start, month_start + timedelta(days=32)),
+        "last_month": total(prev_month_start, month_start),
     }
 
 
@@ -183,7 +159,7 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, SupplyData]]):
         previous = (self.data or {}).get(supply.key)
         now = dt_util.utcnow()
         stat_id = make_stat_id(self.id, supply.key)
-        last_start, last_sum = await get_last_stat(self.hass, stat_id)
+        last_start, last_sum, last_state = await get_last_stat(self.hass, stat_id)
 
         if (
             previous is not None
@@ -204,16 +180,18 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, SupplyData]]):
         readings = await self.client.async_get_readings(
             meter.meter_id, start, today, tz
         )
-        if last_start > EPOCH and readings and readings[0].datetime > last_start:
+        if last_start > EPOCH and readings and readings[0].datetime >= last_start:
             # a gap in the readings longer than the look-back: ask for it all
             readings = await self.client.async_get_readings(
                 meter.meter_id, HISTORY_START, today, tz
             )
 
-        rows = build_statistics(readings, last_start, last_sum)
+        # the last recorded day is written again: more readings of that day
+        # may have come in since
+        rows = build_statistics(readings, last_start, last_sum - last_state)
         if rows:
             _LOGGER.debug(
-                "%s: %s, %d new hours up to %s",
+                "%s: %s, %d days up to %s",
                 self.id,
                 supply.key,
                 len(rows),
