@@ -220,24 +220,16 @@ class GestioHomeClient:
         async with self._lock:
             return parse_dwelling(await self._login())
 
-    async def _landing(self) -> str:
-        """Return the page the web opens for a logged-in user.
-
-        That is what the app's address answers, following one JavaScript
-        redirect if the web sends one.
-        """
-
-        page = await self._request("GET", "")
-        if (m := _JS_REDIRECT.search(page)) and not _LOGIN_REDIRECT.search(page):
-            page = await self._request("GET", m.group(1))
-        return page
-
     async def _login(self) -> str:
-        """Log in and return the landing page; raise InvalidAuth if rejected."""
+        """Log in and return the page the web opens; raise InvalidAuth if rejected.
+
+        That page is what the login answers (redirects followed), or the page
+        it sends the browser to with JavaScript.
+        """
 
         self._logged_in = False
         await self._request("GET", "login.php")  # start the PHP session
-        await self._request(
+        page = await self._request(
             "POST",
             "login.php",
             {
@@ -247,7 +239,8 @@ class GestioHomeClient:
                 "userpass": self._password,
             },
         )
-        page = await self._landing()
+        if (m := _JS_REDIRECT.search(page)) and not _LOGIN_REDIRECT.search(page):
+            page = await self._request("GET", m.group(1))
         if _LOGIN_REDIRECT.search(page) or "userpass" in page:
             raise InvalidAuth("GestioHome rejected the credentials")
         self._logged_in = True
@@ -276,13 +269,9 @@ class GestioHomeClient:
         receipts or alarms, list none).
         """
 
+        # a fresh login: the page it opens has the menu
         async with self._lock:
-            if self._logged_in:
-                landing = await self._landing()
-                if _LOGIN_REDIRECT.search(landing) or "userpass" in landing:
-                    landing = await self._login()
-            else:
-                landing = await self._login()
+            landing = await self._login()
         meters: dict[str, Meter] = {}
         for tab in parse_tabs(landing):
             for meter in parse_meters(

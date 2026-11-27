@@ -119,7 +119,7 @@ async def test_discover_follows_the_menu() -> None:
     calor = HEADER + MENU + SELECT
     session = FakeSession(
         {
-            "": "<script>document.location='iuCalor.php'</script>",
+            "login.php": '<script>document.location="iuCalor.php"</script>',
             "iuCalor.php": calor,
             "iuFrio.php": MENU,
             "iuACS.php": MENU
@@ -140,7 +140,7 @@ async def test_discover_follows_the_menu() -> None:
 
 async def test_login_rejected() -> None:
     """The web sending back to the login page means wrong credentials."""
-    session = FakeSession({"": "<form><input name='userpass'></form>"})
+    session = FakeSession({"login.php": "<form><input name='userpass'></form>"})
     client = GestioHomeClient(session, "x.gestiohome.com", "user", "bad")
     with pytest.raises(InvalidAuth):
         await client.async_login()
