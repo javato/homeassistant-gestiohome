@@ -87,6 +87,19 @@ def test_reset_meter_adds_nothing() -> None:
     assert rows[-1]["sum"] == pytest.approx(4.0)
 
 
+def test_small_drop_is_a_correction() -> None:
+    """A reading slightly below the previous one is subtracted, not a reset."""
+    readings = [
+        Reading(_local(2026, 6, 28, 20), 84.700),
+        Reading(_local(2026, 6, 29, 20), 84.801),
+        Reading(_local(2026, 6, 30, 20), 84.685),
+        Reading(_local(2026, 7, 1, 20), 84.900),
+    ]
+    rows = build_statistics(readings, EPOCH, 0.0)
+    assert [r["state"] for r in rows] == pytest.approx([0.101, -0.116, 0.215])
+    assert rows[-1]["sum"] == pytest.approx(0.2)
+
+
 def test_incremental_build_rewrites_the_last_day() -> None:
     """A later build starts again at the last day and carries the sum on."""
     readings = build_readings(10)

@@ -69,7 +69,10 @@ class GestioHomeConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> tuple[dict[str, Any] | None, str | None]:
         """Log in and find the dwelling and its meters; return (info, error)."""
 
-        session = async_create_clientsession(self.hass, cookie_jar=CookieJar())
+        # a throwaway session: detached (not closed) when done, as HA asks
+        session = async_create_clientsession(
+            self.hass, auto_cleanup=False, cookie_jar=CookieJar()
+        )
         client = GestioHomeClient(session, url, username, password)
         try:
             dwelling = await client.async_login()
@@ -86,7 +89,7 @@ class GestioHomeConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Unexpected error validating GestioHome")
             return None, "unknown"
         finally:
-            await session.close()
+            session.detach()
         if not dwelling.code:
             return None, "unknown"
         if not meters:
