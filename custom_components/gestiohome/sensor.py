@@ -117,7 +117,7 @@ class GestioHomeInfoSensor(GestioHomeEntity, SensorEntity):
 
 
 class GestioHomeSupplySensor(GestioHomeEntity, SensorEntity):
-    """A value of one supply (ACS, calor or frío)."""
+    """A value of one supply (domestic hot water, heating or cooling)."""
 
     entity_description: SupplySensorDescription
 

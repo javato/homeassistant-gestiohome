@@ -1,72 +1,72 @@
-# GestioHome para Home Assistant
+# GestioHome for Home Assistant
 
-Integración para Home Assistant que lee los consumos comunitarios de **GestioHome** (Usanca Metering Solutions) y los lleva al **Panel de Energía con su fecha real**:
+A Home Assistant integration that reads community-metered supplies from **GestioHome** (Usanca Metering Solutions) and brings them into the **Energy dashboard on their real dates**:
 
-| Suministro | Unidad | En el Panel de Energía |
+| Supply | Unit | Energy dashboard |
 |---|---|---|
-| ACS (agua caliente sanitaria) | m³ | Agua |
-| Calor (calefacción, suelo radiante) | kWh | Gas (energía térmica) |
-| Frío (refrigeración) | kWh | Gas (energía térmica) |
+| Domestic hot water | m³ | Water |
+| Heating (e.g. underfloor heating) | kWh | Gas (thermal energy) |
+| Cooling | kWh | Gas (thermal energy) |
 
-Sigue la misma estrategia que [e-data](https://github.com/uvejota/homeassistant-edata) para la luz: en lugar de un sensor que Home Assistant registra cuando lo lee, importa **estadísticas externas** con la fecha y hora de cada consumo.
+It follows the same approach as [e-data](https://github.com/uvejota/homeassistant-edata) does for electricity: instead of a sensor that Home Assistant records when it reads it, it imports **external statistics** dated with each consumption.
 
-## Por qué no un sensor normal
+## Why not a plain sensor
 
-GestioHome publica las lecturas con retraso (una al día, a horas variables). Un sensor normal haría que Home Assistant apuntase cada consumo a la hora en que se leyó la web, no a cuando ocurrió, y el acumulado mensual de la web se pone a cero cada mes. Esta integración:
+GestioHome publishes readings late (about one a day, at varying times). With a plain sensor, Home Assistant would book each consumption at the time the website was read rather than when it happened, and the website's month-to-date figure resets every month. This integration:
 
-- Lee la **lectura absoluta del contador** con su fecha y hora exactas, que nunca se pone a cero.
-- Escribe **una fila por día** (a las 00:00) en `gestiohome:<id>_acs`, `gestiohome:<id>_calor` y `gestiohome:<id>_frio`, con un total que sigue sumando de un mes a otro.
-- Cada día se lleva lo que contó el contador desde la lectura anterior, **igual que la web**: los totales diarios y mensuales cuadran con GestioHome.
-- La primera vez importa **todo el histórico** que tenga GestioHome.
+- Reads the **absolute meter reading** with its exact date and time, which never resets.
+- Writes **one row per day** (at local midnight) to `gestiohome:<id>_dhw`, `gestiohome:<id>_heating` and `gestiohome:<id>_cooling`, with a running total that carries on across months.
+- Gives each day what the meter counted since the previous reading, **exactly as the website does**, so daily and monthly totals match GestioHome.
+- Imports **the whole history** GestioHome holds the first time.
 
-A diferencia de Datadis (luz), GestioHome no da consumo por horas, solo una lectura al día. Por eso las estadísticas son diarias: en la vista por horas del Panel de Energía verás todo el consumo del día a medianoche; usa las vistas por día, semana o mes.
+Unlike Datadis (electricity), GestioHome does not provide hourly consumption, only about one reading a day. That is why the statistics are daily: the hourly view of the Energy dashboard shows each day's consumption at midnight; use the day, week or month views.
 
-## Instalación
+## Installation
 
-Desde el **Marketplace** de Home Assistant (antes HACS):
+From the Home Assistant **Marketplace** (formerly HACS):
 
-1. Ajustes → Marketplace → menú ⋮ → *Repositorios personalizados*.
-2. Añade `https://github.com/javato/homeassistant-gestiohome` como *Integración*.
-3. Busca **GestioHome**, instálala y reinicia Home Assistant.
+1. Settings → Marketplace → ⋮ menu → *Custom repositories*.
+2. Add `https://github.com/javato/homeassistant-gestiohome` as an *Integration*.
+3. Search for **GestioHome**, install it and restart Home Assistant.
 
-## Configuración
+## Configuration
 
-Ajustes → Dispositivos y servicios → Añadir integración → **GestioHome**:
+Settings → Devices & services → Add integration → **GestioHome**:
 
-- **Dirección de GestioHome**: la de tu edificio, por ejemplo `https://miedificio.gestiohome.com` (vale pegar la dirección de la página de inicio de sesión).
-- **Usuario** y **contraseña** de la web de GestioHome.
+- **GestioHome address**: your building's address, e.g. `https://mybuilding.gestiohome.com` (pasting the login page address works too).
+- **Username** and **password** of the GestioHome website.
 
-La integración encuentra sola la vivienda y sus contadores. Si GestioHome deja de aceptar la contraseña, Home Assistant pedirá la nueva.
+The integration finds the dwelling and its meters on its own. If GestioHome stops accepting the password, Home Assistant asks for the new one.
 
-### Panel de Energía
+### Energy dashboard
 
-Ajustes → Paneles → Energía:
+Settings → Dashboards → Energy:
 
-- **Agua**: añade `gestiohome:<id>_acs`.
-- **Gas**: añade `gestiohome:<id>_calor` (y `gestiohome:<id>_frio` si lo usas).
+- **Water**: add `gestiohome:<id>_dhw`.
+- **Gas**: add `gestiohome:<id>_heating` (and `gestiohome:<id>_cooling` if you use it).
 
-Así quedan separados del consumo eléctrico. El `<id>` son los últimos caracteres del código de la app de tu vivienda; aparece en el sensor *Información del suministro*.
+This keeps them separate from electricity. `<id>` is the last characters of your dwelling's app code; the *Supply information* sensor lists the statistics created.
 
-## Entidades
+## Entities
 
-| Entidad | Qué muestra |
+| Entity | Shows |
 |---|---|
-| Información del suministro | Hora de la última lectura, vivienda y estadísticas creadas |
-| Lectura contador (ACS, calor, frío) | Última lectura absoluta del contador |
-| Último consumo registrado | Consumo del último día con lectura |
-| Consumo en el mes / durante último mes | Los mismos totales que muestra la web |
-| Reparar estadísticas de Home Assistant (botón) | Borra las estadísticas de la integración y las vuelve a importar enteras |
-| Forzar sincronización (botón) | Vuelve a consultar GestioHome ahora, también los contadores |
+| Supply information | Time of the latest reading, dwelling and statistics created |
+| Meter reading (hot water, heating, cooling) | Latest absolute meter reading |
+| Last recorded consumption | Consumption of the last day with a reading |
+| Consumption this month / last month | The same totals the website shows |
+| Repair Home Assistant statistics (button) | Clears the integration's statistics and imports them again in full |
+| Force sync (button) | Asks GestioHome again right away, meters included |
 
-Los sensores no tienen *state class* a propósito: son solo para ver los datos y no generan estadísticas con la hora de lectura. Para gráficas usa las estadísticas `gestiohome:...`.
+The sensors deliberately have no *state class*: they are for display only and do not create statistics stamped with the time they were read. For charts, use the `gestiohome:...` statistics.
 
-## Cómo funciona por dentro
+## How it works
 
-- Inicia sesión en la web igual que el navegador y usa su propio servicio de datos (`getStatisticData.php`).
-- Consulta cada hora, pero si ya tiene una lectura de menos de 6 horas no vuelve a preguntar.
-- Cada sincronización vuelve a escribir los últimos 31 días: si una lectura llega tarde a GestioHome, también la de un día pasado, se coloca en su día real.
-- Si el contador baja (cambio o puesta a cero), no resta nada y toma el nuevo valor como punto de partida.
+- It logs in to the website like a browser and uses the website's own data endpoint (`getStatisticData.php`).
+- It checks hourly, but skips the website while it holds a reading less than 6 hours old.
+- Every sync rewrites the last 31 days: a reading that reaches GestioHome late, even for a past day, lands on its real day.
+- If a meter reading goes down (meter replaced or reset), nothing is subtracted and the new value becomes the baseline.
 
-## Licencia
+## License
 
 MIT

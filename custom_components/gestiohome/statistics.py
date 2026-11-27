@@ -37,7 +37,7 @@ from .const import DOMAIN, Supply
 _LOGGER = logging.getLogger(__name__)
 
 EPOCH = datetime(1970, 1, 1, tzinfo=dt_util.UTC)
-# decimals kept in values (ACS meters read litres: 0.001 m³)
+# decimals kept in values (hot water meters read litres: 0.001 m³)
 DECIMALS = 6
 
 

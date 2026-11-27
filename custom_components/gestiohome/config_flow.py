@@ -130,7 +130,7 @@ class GestioHomeConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=self.add_suggested_values_to_schema(USER_SCHEMA, user_input),
             errors=errors,
             description_placeholders={
-                "example_url": "https://miedificio.gestiohome.com"
+                "example_url": "https://mybuilding.gestiohome.com"
             },
         )
 

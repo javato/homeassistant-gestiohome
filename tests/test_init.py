@@ -28,7 +28,7 @@ DATA = {
     "password": "secret",
     "code": "12345678TEST9",
     "scode": "est9",
-    "meters": {"calor": ["2", "Calor"]},
+    "meters": {"heating": ["2", "Heating"]},
 }
 
 
@@ -39,11 +39,11 @@ async def test_setup_imports_history(
     readings = build_readings(20)
     client = AsyncMock()
     client.base_url = "https://test.gestiohome.com/GestioHome/"
-    client.async_login.return_value = Dwelling("12345678TEST9", "Edificio Test")
+    client.async_login.return_value = Dwelling("12345678TEST9", "Test Building")
     client.async_get_readings.return_value = readings
 
     entry = MockConfigEntry(
-        domain=DOMAIN, unique_id="12345678TEST9", title="Edificio Test", data=DATA
+        domain=DOMAIN, unique_id="12345678TEST9", title="Test Building", data=DATA
     )
     entry.add_to_hass(hass)
     with patch("custom_components.gestiohome.GestioHomeClient", return_value=client):
@@ -53,7 +53,7 @@ async def test_setup_imports_history(
 
     assert entry.state is ConfigEntryState.LOADED
     last_start, last_sum, last_state = await get_last_stat(
-        hass, "gestiohome:est9_calor"
+        hass, "gestiohome:est9_heating"
     )
     # 19 days of 10 units, one row a day
     assert last_sum == 190
@@ -61,16 +61,16 @@ async def test_setup_imports_history(
     assert last_start < readings[-1].datetime
 
     registry = er.async_get(hass)
-    entity_id = registry.async_get_entity_id("sensor", DOMAIN, "est9_calor_reading")
+    entity_id = registry.async_get_entity_id("sensor", DOMAIN, "est9_heating_reading")
     assert entity_id == "sensor.gestiohome_est9_heating_meter_reading"
     state = hass.states.get(entity_id)
     assert state is not None
     assert float(state.state) == readings[-1].value
-    assert state.attributes["statistic_id"] == "gestiohome:est9_calor"
+    assert state.attributes["statistic_id"] == "gestiohome:est9_heating"
     # no state class: Home Assistant must not build statistics from it
     assert "state_class" not in state.attributes
     # only the supplies the dwelling has get sensors
-    assert registry.async_get_entity_id("sensor", DOMAIN, "est9_acs_reading") is None
+    assert registry.async_get_entity_id("sensor", DOMAIN, "est9_dhw_reading") is None
 
     assert await hass.config_entries.async_unload(entry.entry_id)
 
@@ -86,7 +86,7 @@ async def test_late_reading_goes_to_its_day(
     client.async_get_readings.return_value = [r for r in readings if r is not late]
 
     entry = MockConfigEntry(
-        domain=DOMAIN, unique_id="12345678TEST9", title="Edificio Test", data=DATA
+        domain=DOMAIN, unique_id="12345678TEST9", title="Test Building", data=DATA
     )
     entry.add_to_hass(hass)
     with patch("custom_components.gestiohome.GestioHomeClient", return_value=client):
@@ -94,7 +94,7 @@ async def test_late_reading_goes_to_its_day(
         await hass.async_block_till_done()
         await async_wait_recording_done(hass)
 
-        stat_id = "gestiohome:est9_calor"
+        stat_id = "gestiohome:est9_heating"
         late_day = day_start(dt_util.as_local(late.datetime).date())
         before = await _daily_states(hass, stat_id)
         assert late_day not in before

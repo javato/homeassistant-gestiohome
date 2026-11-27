@@ -46,40 +46,40 @@
       "info": {
         "name": "Información del suministro"
       },
-      "acs_reading": {
+      "dhw_reading": {
         "name": "Lectura contador ACS"
       },
-      "acs_last_day": {
+      "dhw_last_day": {
         "name": "Último consumo registrado ACS"
       },
-      "acs_month": {
+      "dhw_month": {
         "name": "Consumo ACS en el mes"
       },
-      "acs_last_month": {
+      "dhw_last_month": {
         "name": "Consumo ACS durante último mes"
       },
-      "calor_reading": {
+      "heating_reading": {
         "name": "Lectura contador calor"
       },
-      "calor_last_day": {
+      "heating_last_day": {
         "name": "Último consumo registrado calor"
       },
-      "calor_month": {
+      "heating_month": {
         "name": "Consumo calor en el mes"
       },
-      "calor_last_month": {
+      "heating_last_month": {
         "name": "Consumo calor durante último mes"
       },
-      "frio_reading": {
+      "cooling_reading": {
         "name": "Lectura contador frío"
       },
-      "frio_last_day": {
+      "cooling_last_day": {
         "name": "Último consumo registrado frío"
       },
-      "frio_month": {
+      "cooling_month": {
         "name": "Consumo frío en el mes"
       },
-      "frio_last_month": {
+      "cooling_last_month": {
         "name": "Consumo frío durante último mes"
       }
     }

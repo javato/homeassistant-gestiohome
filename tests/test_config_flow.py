@@ -23,13 +23,13 @@ USER_INPUT = {
 def _patch_client(login=None):
     client = AsyncMock()
     client.async_login.side_effect = login or (
-        lambda: Dwelling("12345678TEST9", "Edificio Test / P1 / 2 / A")
+        lambda: Dwelling("12345678TEST9", "Test Building / P1 / 2 / A")
     )
 
     async def meters(page: str):
         return {
-            "iuACS.php": [Meter("1", "ACS")],
-            "iuCalor.php": [Meter("2", "Calor")],
+            "iuACS.php": [Meter("1", "DHW")],
+            "iuCalor.php": [Meter("2", "Heating")],
         }.get(page, [])
 
     client.async_get_meters.side_effect = meters
@@ -61,11 +61,14 @@ async def test_user_flow(
             result["flow_id"], USER_INPUT
         )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "Edificio Test / P1 / 2 / A"
+    assert result["title"] == "Test Building / P1 / 2 / A"
     assert result["result"].unique_id == "12345678TEST9"
     assert result["data"]["url"] == "https://test.gestiohome.com"
     assert result["data"]["scode"] == "est9"
-    assert result["data"]["meters"] == {"acs": ["1", "ACS"], "calor": ["2", "Calor"]}
+    assert result["data"]["meters"] == {
+        "dhw": ["1", "DHW"],
+        "heating": ["2", "Heating"],
+    }
 
 
 async def test_user_flow_invalid_auth(
@@ -96,7 +99,7 @@ async def test_reauth_flow(
             "password": "old",
             "code": "12345678TEST9",
             "scode": "est9",
-            "meters": {"acs": ["1", "ACS"]},
+            "meters": {"dhw": ["1", "DHW"]},
         },
     )
     entry.add_to_hass(hass)

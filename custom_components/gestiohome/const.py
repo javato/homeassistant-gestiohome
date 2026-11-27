@@ -33,9 +33,11 @@ class Supply:
 
 
 SUPPLIES: tuple[Supply, ...] = (
-    Supply("acs", "iuACS.php", UnitOfVolume.CUBIC_METERS, SensorDeviceClass.VOLUME),
+    Supply("dhw", "iuACS.php", UnitOfVolume.CUBIC_METERS, SensorDeviceClass.VOLUME),
     Supply(
-        "calor", "iuCalor.php", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY
+        "heating", "iuCalor.php", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY
     ),
-    Supply("frio", "iuFrio.php", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY),
+    Supply(
+        "cooling", "iuFrio.php", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY
+    ),
 )

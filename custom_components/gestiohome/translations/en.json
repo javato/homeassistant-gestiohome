@@ -7,7 +7,7 @@
     "error": {
       "invalid_auth": "GestioHome rejected the username or password.",
       "cannot_connect": "Could not connect to GestioHome. Check the address and try again later.",
-      "no_meters": "No meter (DHW, heating or cooling) was found on this account.",
+      "no_meters": "No meter (hot water, heating or cooling) was found on this account.",
       "unknown": "Unknown error"
     },
     "step": {
@@ -46,40 +46,40 @@
       "info": {
         "name": "Supply information"
       },
-      "acs_reading": {
-        "name": "DHW meter reading"
+      "dhw_reading": {
+        "name": "Hot water meter reading"
       },
-      "acs_last_day": {
-        "name": "Last recorded DHW consumption"
+      "dhw_last_day": {
+        "name": "Last recorded hot water consumption"
       },
-      "acs_month": {
-        "name": "DHW consumption this month"
+      "dhw_month": {
+        "name": "Hot water consumption this month"
       },
-      "acs_last_month": {
-        "name": "DHW consumption last month"
+      "dhw_last_month": {
+        "name": "Hot water consumption last month"
       },
-      "calor_reading": {
+      "heating_reading": {
         "name": "Heating meter reading"
       },
-      "calor_last_day": {
+      "heating_last_day": {
         "name": "Last recorded heating consumption"
       },
-      "calor_month": {
+      "heating_month": {
         "name": "Heating consumption this month"
       },
-      "calor_last_month": {
+      "heating_last_month": {
         "name": "Heating consumption last month"
       },
-      "frio_reading": {
+      "cooling_reading": {
         "name": "Cooling meter reading"
       },
-      "frio_last_day": {
+      "cooling_last_day": {
         "name": "Last recorded cooling consumption"
       },
-      "frio_month": {
+      "cooling_month": {
         "name": "Cooling consumption this month"
       },
-      "frio_last_month": {
+      "cooling_last_month": {
         "name": "Cooling consumption last month"
       }
     }
