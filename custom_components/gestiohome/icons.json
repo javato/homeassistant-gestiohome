@@ -1,0 +1,23 @@
+{
+  "entity": {
+    "button": {
+      "soft_reset": { "default": "mdi:chart-box-outline" },
+      "import_all_data": { "default": "mdi:sync" }
+    },
+    "sensor": {
+      "info": { "default": "mdi:home-thermometer-outline" },
+      "dhw_reading": { "default": "mdi:counter" },
+      "dhw_last_day": { "default": "mdi:water-thermometer" },
+      "dhw_month": { "default": "mdi:water-thermometer" },
+      "dhw_last_month": { "default": "mdi:water-thermometer" },
+      "heating_reading": { "default": "mdi:counter" },
+      "heating_last_day": { "default": "mdi:radiator" },
+      "heating_month": { "default": "mdi:radiator" },
+      "heating_last_month": { "default": "mdi:radiator" },
+      "cooling_reading": { "default": "mdi:counter" },
+      "cooling_last_day": { "default": "mdi:snowflake" },
+      "cooling_month": { "default": "mdi:snowflake" },
+      "cooling_last_month": { "default": "mdi:snowflake" }
+    }
+  }
+}

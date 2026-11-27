@@ -1,0 +1,14 @@
+{
+  "domain": "gestiohome",
+  "name": "GestioHome",
+  "codeowners": ["@javato"],
+  "config_flow": true,
+  "dependencies": ["recorder"],
+  "documentation": "https://github.com/javato/homeassistant-gestiohome",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/javato/homeassistant-gestiohome/issues",
+  "loggers": ["custom_components.gestiohome"],
+  "requirements": [],
+  "version": "2026.11.0"
+}

@@ -1,0 +1,87 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Esta vivienda ya está configurada",
+      "reauth_successful": "Contraseña actualizada. La integración se ha recargado."
+    },
+    "error": {
+      "invalid_auth": "GestioHome ha rechazado el usuario o la contraseña.",
+      "cannot_connect": "No se pudo conectar con GestioHome. Revisa la dirección e inténtalo más tarde.",
+      "no_meters": "No se ha encontrado ningún contador (ACS, calor o frío) en esta cuenta.",
+      "unknown": "Error desconocido"
+    },
+    "step": {
+      "user": {
+        "title": "Conectar con GestioHome",
+        "data": {
+          "url": "Dirección de GestioHome",
+          "username": "Usuario",
+          "password": "Contraseña"
+        },
+        "data_description": {
+          "url": "La dirección de tu edificio, por ejemplo {example_url}",
+          "username": "El usuario con el que entras en la web de GestioHome.",
+          "password": "La contraseña de la web de GestioHome."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Volver a autenticar en GestioHome",
+        "description": "GestioHome ha rechazado la contraseña de {username}. Escribe la contraseña actual; la integración seguirá donde estaba.",
+        "data": {
+          "password": "Contraseña"
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "soft_reset": {
+        "name": "Reparar estadísticas de Home Assistant"
+      },
+      "import_all_data": {
+        "name": "Forzar sincronización"
+      }
+    },
+    "sensor": {
+      "info": {
+        "name": "Información del suministro"
+      },
+      "dhw_reading": {
+        "name": "Lectura contador ACS"
+      },
+      "dhw_last_day": {
+        "name": "Último consumo registrado ACS"
+      },
+      "dhw_month": {
+        "name": "Consumo ACS en el mes"
+      },
+      "dhw_last_month": {
+        "name": "Consumo ACS durante último mes"
+      },
+      "heating_reading": {
+        "name": "Lectura contador calor"
+      },
+      "heating_last_day": {
+        "name": "Último consumo registrado calor"
+      },
+      "heating_month": {
+        "name": "Consumo calor en el mes"
+      },
+      "heating_last_month": {
+        "name": "Consumo calor durante último mes"
+      },
+      "cooling_reading": {
+        "name": "Lectura contador frío"
+      },
+      "cooling_last_day": {
+        "name": "Último consumo registrado frío"
+      },
+      "cooling_month": {
+        "name": "Consumo frío en el mes"
+      },
+      "cooling_last_month": {
+        "name": "Consumo frío durante último mes"
+      }
+    }
+  }
+}
