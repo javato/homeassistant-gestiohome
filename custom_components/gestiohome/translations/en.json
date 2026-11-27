@@ -19,7 +19,7 @@
           "password": "Password"
         },
         "data_description": {
-          "url": "Your building's address, e.g. https://mybuilding.gestiohome.com",
+          "url": "Your building's address, e.g. {example_url}",
           "username": "The username you use on the GestioHome website.",
           "password": "The GestioHome website password."
         }

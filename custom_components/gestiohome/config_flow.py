@@ -129,6 +129,9 @@ class GestioHomeConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(USER_SCHEMA, user_input),
             errors=errors,
+            description_placeholders={
+                "example_url": "https://miedificio.gestiohome.com"
+            },
         )
 
     async def async_step_reauth(
