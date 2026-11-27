@@ -35,7 +35,7 @@ If GestioHome stops accepting the password, Home Assistant asks for the new one.
 
 ### Meters and statistics
 
-A meter is recognised **only by its GestioHome number**. Each one gets a statistic `gestiohome:<id>_<name>_<number>`, e.g. `gestiohome:abcd_calor_23021`, created when the meter is added and never changed afterwards, even if you rename the meter or GestioHome renames its tab. `<id>` is the last characters of your dwelling's app code.
+A meter is recognised **only by its GestioHome number**. Each one gets a statistic `gestiohome:<id>_<name>_<number>_consumption`, e.g. `gestiohome:abcd_calor_23021_consumption` (like edata's `edata:<id>_consumption`), created when the meter is added and never changed afterwards, even if you rename the meter or GestioHome renames its tab. `<id>` is the last characters of your dwelling's app code.
 
 To add, remove or rename meters later: Settings → Devices & services → GestioHome → **Configure**. Removing a meter removes its sensors; its statistic is kept.
 
@@ -69,7 +69,7 @@ The sensors deliberately have no *state class*: they are for display only and do
 
 ### Upgrading from 2026.11.1 or earlier
 
-Those versions had fixed supplies. After updating, remove the integration and add it again to choose its meters: it imports the whole history again into the new statistics (`gestiohome:<id>_<name>_<number>`). Switch the Energy dashboard to them; the old ones (`gestiohome:<id>_heating`…) are kept when the integration is removed and can be deleted in Developer tools → Statistics.
+Those versions had fixed supplies. After updating, remove the integration and add it again to choose its meters: it imports the whole history again into the new statistics (`gestiohome:<id>_<name>_<number>_consumption`). Switch the Energy dashboard to them; the old ones (`gestiohome:<id>_heating`…) are kept when the integration is removed and can be deleted in Developer tools → Statistics.
 
 ## License
 

@@ -29,7 +29,7 @@ DATA = {
     "scode": "est9",
 }
 OPTIONS = {"meters": {"2": {"name": "Calor", "stat": "calor_2"}}, "known": ["2"]}
-STAT_ID = "gestiohome:est9_calor_2"
+STAT_ID = "gestiohome:est9_calor_2_consumption"
 
 
 def _client(readings, meters=None) -> AsyncMock:

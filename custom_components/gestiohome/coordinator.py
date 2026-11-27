@@ -123,8 +123,11 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, MeterData]]):
         return self.config_entry.options.get(CONF_METERS, {})
 
     def stat_id(self, meter_id: str) -> str:
-        """Return the statistic ID of a chosen meter (fixed when it was added)."""
-        return make_stat_id(self.id, self.meters[meter_id][CONF_STAT])
+        """Return the statistic ID of a chosen meter (fixed when it was added).
+
+        Like edata's ``edata:<scups>_consumption``.
+        """
+        return make_stat_id(self.id, f"{self.meters[meter_id][CONF_STAT]}_consumption")
 
     async def _async_update_data(self) -> dict[str, MeterData]:
         try:
