@@ -64,7 +64,7 @@ Los sensores no tienen *state class* a propósito: son solo para ver los datos y
 
 - Inicia sesión en la web igual que el navegador y usa su propio servicio de datos (`getStatisticData.php`).
 - Consulta cada hora, pero si ya tiene una lectura de menos de 6 horas no vuelve a preguntar.
-- El último día se vuelve a escribir en cada sincronización, por si llega otra lectura ese mismo día.
+- Cada sincronización vuelve a escribir los últimos 31 días: si una lectura llega tarde a GestioHome, también la de un día pasado, se coloca en su día real.
 - Si el contador baja (cambio o puesta a cero), no resta nada y toma el nuevo valor como punto de partida.
 
 ## Licencia

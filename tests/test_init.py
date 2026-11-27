@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
+from homeassistant.components.recorder.statistics import statistics_during_period
+from homeassistant.components.recorder.util import get_instance
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
@@ -14,7 +18,7 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 
 from custom_components.gestiohome.api import Dwelling
 from custom_components.gestiohome.const import DOMAIN
-from custom_components.gestiohome.statistics import get_last_stat
+from custom_components.gestiohome.statistics import day_start, get_last_stat
 
 from .conftest import build_readings
 
@@ -69,3 +73,59 @@ async def test_setup_imports_history(
     assert registry.async_get_entity_id("sensor", DOMAIN, "est9_acs_reading") is None
 
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_late_reading_goes_to_its_day(
+    recorder_mock, enable_custom_integrations, hass: HomeAssistant
+) -> None:
+    """A reading that reaches GestioHome late is written on its own day."""
+    readings = build_readings(20)
+    late = readings[10]
+    client = AsyncMock()
+    client.base_url = "https://test.gestiohome.com/GestioHome/"
+    client.async_get_readings.return_value = [r for r in readings if r is not late]
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id="12345678TEST9", title="Edificio Test", data=DATA
+    )
+    entry.add_to_hass(hass)
+    with patch("custom_components.gestiohome.GestioHomeClient", return_value=client):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await async_wait_recording_done(hass)
+
+        stat_id = "gestiohome:est9_calor"
+        late_day = day_start(dt_util.as_local(late.datetime).date())
+        before = await _daily_states(hass, stat_id)
+        assert late_day not in before
+        assert before[late_day + timedelta(days=1)] == 20
+
+        # the missing reading shows up later
+        client.async_get_readings.return_value = readings
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        await async_wait_recording_done(hass)
+
+    after = await _daily_states(hass, stat_id)
+    assert after[late_day] == 10
+    assert after[late_day + timedelta(days=1)] == 10
+    _, last_sum, _ = await get_last_stat(hass, stat_id)
+    assert last_sum == 190
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def _daily_states(hass: HomeAssistant, stat_id: str) -> dict:
+    stats = await get_instance(hass).async_add_executor_job(
+        statistics_during_period,
+        hass,
+        dt_util.utc_from_timestamp(0),
+        None,
+        {stat_id},
+        "hour",
+        None,
+        {"state"},
+    )
+    return {
+        dt_util.utc_from_timestamp(row["start"]): row["state"]
+        for row in stats.get(stat_id, [])
+    }

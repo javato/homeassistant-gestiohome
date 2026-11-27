@@ -21,8 +21,10 @@ from .statistics import (
     clear_statistics,
     create_metadata,
     daily_consumption,
+    day_start,
     get_integration_stat_ids,
     get_last_stat,
+    get_sum_before,
     make_stat_id,
 )
 
@@ -34,8 +36,11 @@ UPDATE_INTERVAL = timedelta(minutes=60)
 MIN_READING_AGE = timedelta(hours=6)
 # the oldest date asked for on a full import (the web answers what it has)
 HISTORY_START = date(2015, 1, 1)
-# extra days asked for before the last recorded day, so the reading right
-# before it is always there (readings have gaps)
+# readings can reach GestioHome late, also for past days: every sync rewrites
+# the statistics of this many days before the last recorded one
+REWRITE_DAYS = 31
+# extra days asked for before the rewritten ones, so the reading right before
+# them is always there (readings have gaps)
 LOOKBACK = timedelta(days=31)
 
 
@@ -159,7 +164,7 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, SupplyData]]):
         previous = (self.data or {}).get(supply.key)
         now = dt_util.utcnow()
         stat_id = make_stat_id(self.id, supply.key)
-        last_start, last_sum, last_state = await get_last_stat(self.hass, stat_id)
+        last_start, _, _ = await get_last_stat(self.hass, stat_id)
 
         if (
             previous is not None
@@ -174,21 +179,29 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, SupplyData]]):
         # also the previous month, for the monthly sensors
         sensors_start = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
         if last_start > EPOCH:
-            start = min(dt_util.as_local(last_start - LOOKBACK).date(), sensors_start)
+            since = day_start(
+                dt_util.as_local(last_start).date() - timedelta(days=REWRITE_DAYS)
+            )
+            start = min(dt_util.as_local(since - LOOKBACK).date(), sensors_start)
         else:
+            since = EPOCH
             start = HISTORY_START
         readings = await self.client.async_get_readings(
             meter.meter_id, start, today, tz
         )
-        if last_start > EPOCH and readings and readings[0].datetime >= last_start:
+        if since > EPOCH and readings and readings[0].datetime >= since:
             # a gap in the readings longer than the look-back: ask for it all
             readings = await self.client.async_get_readings(
                 meter.meter_id, HISTORY_START, today, tz
             )
 
-        # the last recorded day is written again: more readings of that day
-        # may have come in since
-        rows = build_statistics(readings, last_start, last_sum - last_state)
+        # the last days are written again, with the real day of each reading:
+        # readings that reached GestioHome late land where they belong (the
+        # recorder overwrites rows with the same start)
+        base_sum = (
+            await get_sum_before(self.hass, stat_id, since) if since > EPOCH else 0.0
+        )
+        rows = build_statistics(readings, since, base_sum)
         if rows:
             _LOGGER.debug(
                 "%s: %s, %d days up to %s",

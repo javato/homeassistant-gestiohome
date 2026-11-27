@@ -13,7 +13,7 @@ since the previous reading, assigned to the day of the reading as the web does.
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 import logging
 
 from homeassistant.components.recorder import util as recorder_util
@@ -26,6 +26,7 @@ from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
     list_statistic_ids,
+    statistics_during_period,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -76,6 +77,30 @@ async def get_last_stat(
         row.get("sum") or 0.0,
         row.get("state") or 0.0,
     )
+
+
+async def get_sum_before(hass: HomeAssistant, stat_id: str, before: datetime) -> float:
+    """Return the running total of the last row that starts before ``before``.
+
+    Looks back a month first and then over the whole history (as edata does),
+    so a gap in the data does not restart the sum from 0.
+    """
+
+    recorder = recorder_util.get_instance(hass)
+    for start in (before - timedelta(days=31), EPOCH):
+        stats = await recorder.async_add_executor_job(
+            statistics_during_period,
+            hass,
+            start,
+            before,
+            {stat_id},
+            "hour",
+            None,
+            {"sum"},
+        )
+        if rows := stats.get(stat_id):
+            return rows[-1].get("sum") or 0.0
+    return 0.0
 
 
 async def get_integration_stat_ids(
