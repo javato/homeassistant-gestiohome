@@ -83,6 +83,8 @@ async def test_setup_imports_history(
     state = hass.states.get(entity_id)
     assert state is not None
     assert float(state.state) == readings[-1].value
+    # whole kWh, shown as GestioHome gives them: no ".0"
+    assert state.state == str(int(readings[-1].value))
     assert state.attributes["unit_of_measurement"] == "kWh"
     assert state.attributes["statistic_id"] == STAT_ID
     # no state class: Home Assistant must not build statistics from it
