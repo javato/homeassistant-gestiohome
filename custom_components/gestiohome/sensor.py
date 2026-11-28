@@ -27,6 +27,17 @@ from .statistics import unit_info
 PARALLEL_UPDATES = 0
 
 
+def as_given(value: float | None) -> float | int | None:
+    """Return a value with the decimals GestioHome gives, and no more.
+
+    Whole numbers (meters read in whole kWh) show without decimals; the
+    others keep theirs (m³ readings come with three).
+    """
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
 @dataclass(frozen=True, kw_only=True)
 class MeterSensorDescription(SensorEntityDescription):
     """Describes a sensor of one meter."""
@@ -44,23 +55,19 @@ METER_SENSORS: tuple[MeterSensorDescription, ...] = (
             "meter_id": d.meter_id,
             "statistic_id": d.stat_id,
         },
-        suggested_display_precision=3,
     ),
     MeterSensorDescription(
         key="last_day",
         value_fn=lambda d: d.last_day,
         attrs_fn=lambda d: {"date": d.last_day_date},
-        suggested_display_precision=3,
     ),
     MeterSensorDescription(
         key="month",
         value_fn=lambda d: d.month,
-        suggested_display_precision=3,
     ),
     MeterSensorDescription(
         key="last_month",
         value_fn=lambda d: d.last_month,
-        suggested_display_precision=3,
     ),
 )
 
@@ -162,7 +169,7 @@ class GestioHomeMeterSensor(GestioHomeEntity, SensorEntity):
         """Return the value."""
         if (data := self._meter_data) is None:
             return None
-        return self.entity_description.value_fn(data)
+        return as_given(self.entity_description.value_fn(data))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
