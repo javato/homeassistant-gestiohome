@@ -12,7 +12,6 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 )
 
 from custom_components.gestiohome.api import Reading
-from custom_components.gestiohome.const import SUPPLIES
 from custom_components.gestiohome.statistics import (
     EPOCH,
     add_statistics,
@@ -20,7 +19,9 @@ from custom_components.gestiohome.statistics import (
     create_metadata,
     daily_consumption,
     get_last_stat,
+    hourly_consumption,
     make_stat_id,
+    unit_info,
 )
 
 from .conftest import build_readings
@@ -39,30 +40,50 @@ def _local(*args: int) -> datetime:
     return datetime(*args, tzinfo=dt_util.get_time_zone("Europe/Madrid"))
 
 
-def test_one_row_per_day_like_the_web() -> None:
-    """What was counted since the previous reading goes to the reading's day."""
+def test_each_reading_in_its_hour() -> None:
+    """What was counted since the previous reading goes to the reading's hour."""
     readings = [
         Reading(_local(2026, 10, 30, 12, 30), 100.0),
-        Reading(_local(2026, 10, 31, 12, 30), 110.0),
-        Reading(_local(2026, 11, 1, 12, 30), 124.0),
+        Reading(_local(2026, 10, 31, 18, 29), 110.0),
+        Reading(_local(2026, 11, 1, 6, 43), 124.0),
     ]
     rows = build_statistics(readings, EPOCH, 0.0)
     assert [dt_util.as_local(r["start"]).isoformat() for r in rows] == [
-        "2026-10-31T00:00:00+01:00",
-        "2026-11-01T00:00:00+01:00",
+        "2026-10-31T18:00:00+01:00",
+        "2026-11-01T06:00:00+01:00",
     ]
     assert [r["state"] for r in rows] == [10.0, 14.0]
     assert [r["sum"] for r in rows] == [10.0, 24.0]
 
 
 def test_several_readings_a_day_add_up() -> None:
-    """Two readings on the same day make a single row."""
+    """Two readings on a day make two hours and one day, like the web."""
     readings = [
-        Reading(_local(2026, 11, 1, 12, 0), 0.0),
-        Reading(_local(2026, 11, 2, 4, 0), 3.0),
-        Reading(_local(2026, 11, 2, 16, 0), 5.0),
+        Reading(_local(2026, 11, 1, 12, 30), 100.0),
+        Reading(_local(2026, 11, 2, 8, 0), 103.0),
+        Reading(_local(2026, 11, 2, 20, 0), 105.0),
     ]
     assert daily_consumption(readings) == {date(2026, 11, 2): 5.0}
+    assert list(hourly_consumption(readings).values()) == [3.0, 2.0]
+
+
+def test_readings_in_one_hour_share_its_row() -> None:
+    """Two readings in the same hour add up in that row."""
+    readings = [
+        Reading(_local(2026, 11, 1, 12, 30), 100.0),
+        Reading(_local(2026, 11, 2, 14, 5), 103.0),
+        Reading(_local(2026, 11, 2, 14, 40), 105.0),
+    ]
+    assert list(hourly_consumption(readings).values()) == [5.0]
+
+
+def test_unit_info() -> None:
+    """GestioHome units map to Home Assistant's; unknown ones are kept."""
+    assert unit_info("kWh") == ("kWh", "energy")
+    assert unit_info("m3") == ("m³", "volume")
+    assert unit_info("Litros") == ("L", "volume")
+    assert unit_info("tn") == ("tn", None)
+    assert unit_info(None) == (None, None)
 
 
 def test_days_without_readings_go_to_the_next_reading() -> None:
@@ -100,7 +121,7 @@ def test_small_drop_is_a_correction() -> None:
     assert rows[-1]["sum"] == pytest.approx(0.2)
 
 
-def test_incremental_build_rewrites_the_last_day() -> None:
+def test_incremental_build_rewrites_the_last_rows() -> None:
     """A later build starts again at the last day and carries the sum on."""
     readings = build_readings(10)
     full = build_statistics(readings, EPOCH, 0.0)
@@ -115,10 +136,9 @@ async def test_statistics_are_recorded(
     recorder_mock, enable_custom_integrations, hass: HomeAssistant
 ) -> None:
     """Rows reach the recorder and get_last_stat reads them back."""
-    supply = SUPPLIES[0]
-    stat_id = make_stat_id("est9", supply.key)
+    stat_id = make_stat_id("est9", "calor_2")
     rows = build_statistics(build_readings(5), EPOCH, 0.0)
-    add_statistics(hass, create_metadata(stat_id, supply), rows, "est9")
+    add_statistics(hass, create_metadata(stat_id, "Calor", "kWh"), rows, "est9")
     await async_wait_recording_done(hass)
 
     last_start, last_sum, last_state = await get_last_stat(hass, stat_id)

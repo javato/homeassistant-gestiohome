@@ -6,9 +6,10 @@ consumption of the period and ``sum`` the running total. Each sync continues
 from the last recorded row and its sum, so totals never reset.
 
 GestioHome serves absolute meter readings (about one a day, at varying times),
-not hourly consumption like Datadis. So there is one row per day, at local
-midnight (statistics rows must start on the hour), with what the meter counted
-since the previous reading, assigned to the day of the reading as the web does.
+not hourly consumption like Datadis. Each reading is written in the hour it was
+taken (statistics rows must start on the hour), with what the meter counted
+since the previous reading, as Home Assistant does with a meter that reports
+once a day. Days, and so months, add up exactly as on the web.
 """
 
 from __future__ import annotations
@@ -25,14 +26,15 @@ from homeassistant.components.recorder.models import (
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
-    list_statistic_ids,
     statistics_during_period,
 )
+from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.const import UnitOfEnergy, UnitOfVolume
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .api import Reading
-from .const import DOMAIN, Supply
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,21 +46,48 @@ DECIMALS = 6
 RESET_RATIO = 0.9
 
 
+# units GestioHome gives (seriesUnit), lower case without spaces, mapped to
+# Home Assistant's unit and device class (which is also the unit class)
+_UNITS: dict[str, tuple[str, SensorDeviceClass]] = {
+    "wh": (UnitOfEnergy.WATT_HOUR, SensorDeviceClass.ENERGY),
+    "kwh": (UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY),
+    "mwh": (UnitOfEnergy.MEGA_WATT_HOUR, SensorDeviceClass.ENERGY),
+    "gj": (UnitOfEnergy.GIGA_JOULE, SensorDeviceClass.ENERGY),
+    "m3": (UnitOfVolume.CUBIC_METERS, SensorDeviceClass.VOLUME),
+    "m³": (UnitOfVolume.CUBIC_METERS, SensorDeviceClass.VOLUME),
+    "l": (UnitOfVolume.LITERS, SensorDeviceClass.VOLUME),
+    "litros": (UnitOfVolume.LITERS, SensorDeviceClass.VOLUME),
+}
+
+
+def unit_info(unit: str | None) -> tuple[str | None, SensorDeviceClass | None]:
+    """Return Home Assistant's unit and device class for a GestioHome unit.
+
+    A unit Home Assistant does not know is kept as it comes, without a class.
+    """
+
+    if unit is None:
+        return None, None
+    return _UNITS.get(unit.replace(" ", "").lower(), (unit, None))
+
+
 def make_stat_id(integration_id: str, suffix: str) -> str:
     """Create a statistic ID."""
     return f"{DOMAIN}:{integration_id}_{suffix}"
 
 
-def create_metadata(stat_id: str, supply: Supply) -> StatisticMetaData:
-    """Create the metadata of a supply statistic."""
+def create_metadata(stat_id: str, name: str, unit: str | None) -> StatisticMetaData:
+    """Create the metadata of a meter statistic."""
+
+    ha_unit, device_class = unit_info(unit)
     return StatisticMetaData(
         mean_type=StatisticMeanType.NONE,
         has_sum=True,
-        name=stat_id,
+        name=f"GestioHome {name}",
         source=DOMAIN,
         statistic_id=stat_id,
-        unit_class=supply.unit_class,
-        unit_of_measurement=supply.unit,
+        unit_class=device_class.value if device_class else None,
+        unit_of_measurement=ha_unit,
     )
 
 
@@ -104,19 +133,6 @@ async def get_sum_before(hass: HomeAssistant, stat_id: str, before: datetime) ->
         if rows := stats.get(stat_id):
             return rows[-1].get("sum") or 0.0
     return 0.0
-
-
-async def get_integration_stat_ids(
-    hass: HomeAssistant, integration_id: str
-) -> list[str]:
-    """Get all statistic IDs of this integration entry."""
-
-    preamble = f"{DOMAIN}:{integration_id}_"
-    recorder = recorder_util.get_instance(hass)
-    all_ids = await recorder.async_add_executor_job(list_statistic_ids, hass)
-    return [
-        x["statistic_id"] for x in all_ids if x["statistic_id"].startswith(preamble)
-    ]
 
 
 async def clear_statistics(
@@ -182,6 +198,24 @@ def daily_consumption(readings: list[Reading]) -> dict[date, float]:
     return {day: round(value, DECIMALS) for day, value in days.items()}
 
 
+def hourly_consumption(readings: list[Reading]) -> dict[datetime, float]:
+    """Return the consumption of each hour that has readings (start in UTC).
+
+    What the meter counted since the previous reading goes to the hour of the
+    new reading, as Home Assistant does with a meter that reports once a day.
+    """
+
+    points = continuous_counter(readings)
+    hours: dict[datetime, float] = {}
+    for reading, (_, total), (_, before) in zip(
+        readings[1:], points[1:], points, strict=False
+    ):
+        local = dt_util.as_local(reading.datetime)
+        hour = dt_util.as_utc(local.replace(minute=0, second=0, microsecond=0))
+        hours[hour] = hours.get(hour, 0.0) + total - before
+    return {hour: round(value, DECIMALS) for hour, value in hours.items()}
+
+
 def day_start(day: date) -> datetime:
     """Return the local midnight starting ``day``, in UTC."""
     return dt_util.as_utc(
@@ -192,17 +226,16 @@ def day_start(day: date) -> datetime:
 def build_statistics(
     readings: list[Reading], since: datetime, base_sum: float
 ) -> list[StatisticData]:
-    """Return one row per day from ``since`` on, at local midnight.
+    """Return one row per hour with readings, from ``since`` on.
 
-    ``base_sum`` is the running total right before ``since``. The row of the
-    last day is rewritten on later syncs while more readings of that day come
-    in (the recorder overwrites a row with the same start).
+    ``base_sum`` is the running total right before ``since``. Rows that are
+    written again replace the old ones (the recorder overwrites a row with the
+    same start), so readings that arrive late land in their own hour.
     """
 
     rows: list[StatisticData] = []
     running = base_sum
-    for day, consumption in sorted(daily_consumption(readings).items()):
-        start = day_start(day)
+    for start, consumption in sorted(hourly_consumption(readings).items()):
         if start < since:
             continue
         running += consumption
@@ -228,7 +261,7 @@ def add_statistics(
         len(statistics),
         metadata["statistic_id"],
     )
-    chunk = 24 * 31
+    chunk = 24 * 31  # a month of hourly rows
     for i in range(0, len(statistics), chunk):
         try:
             async_add_external_statistics(hass, metadata, statistics[i : i + chunk])

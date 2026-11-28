@@ -53,3 +53,22 @@ async def async_unload_entry(hass: HomeAssistant, entry: GestioHomeConfigEntry) 
     """Unload a config entry."""
 
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_migrate_entry(
+    hass: HomeAssistant, entry: GestioHomeConfigEntry
+) -> bool:
+    """Refuse entries of version 1 (fixed supplies): remove and add it again.
+
+    Statistics are kept when an entry is removed, and a new entry imports the
+    whole history again.
+    """
+
+    if entry.version < 2:
+        _LOGGER.error(
+            "%s was set up by GestioHome 2026.11.1 or earlier: remove the "
+            "integration and add it again to choose its meters",
+            entry.title,
+        )
+        return False
+    return entry.version == 2

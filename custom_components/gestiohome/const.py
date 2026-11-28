@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from homeassistant.components.sensor import SensorDeviceClass
-from homeassistant.const import UnitOfEnergy, UnitOfVolume
-
 DOMAIN = "gestiohome"
 
 CONF_URL = "url"
@@ -18,26 +13,14 @@ CONF_CODE = "code"
 # entity unique IDs and statistic IDs, like the "scups" of edata
 CONF_SCODE = "scode"
 
-# meter of each supply found when set up: {supply key: [meter id, meter name]}
+# options: the meters the user chose, keyed by GestioHome's numeric meter ID,
+# which is the only thing that tells whether a meter is the same one:
+# {meter id: {"name": name the user gave it, "stat": "<name>_<number>", the
+# part of the statistic ID fixed when the meter was added}}
 CONF_METERS = "meters"
-
-
-@dataclass(frozen=True, slots=True)
-class Supply:
-    """A kind of supply GestioHome serves, one page each."""
-
-    key: str
-    page: str
-    unit: str
-    unit_class: str
-
-
-SUPPLIES: tuple[Supply, ...] = (
-    Supply("dhw", "iuACS.php", UnitOfVolume.CUBIC_METERS, SensorDeviceClass.VOLUME),
-    Supply(
-        "heating", "iuCalor.php", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY
-    ),
-    Supply(
-        "cooling", "iuFrio.php", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY
-    ),
-)
+# options: every meter ID GestioHome showed when the meters were last chosen,
+# so only meters that appear later are reported as new
+CONF_KNOWN = "known"
+# meter config keys
+CONF_NAME = "name"
+CONF_STAT = "stat"

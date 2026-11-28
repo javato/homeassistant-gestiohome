@@ -8,12 +8,13 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .api import CannotConnect, GestioHomeClient, InvalidAuth, Meter, Reading
-from .const import CONF_METERS, CONF_SCODE, DOMAIN, SUPPLIES, Supply
+from .const import CONF_KNOWN, CONF_METERS, CONF_NAME, CONF_SCODE, CONF_STAT, DOMAIN
 from .statistics import (
     EPOCH,
     add_statistics,
@@ -22,7 +23,6 @@ from .statistics import (
     create_metadata,
     daily_consumption,
     day_start,
-    get_integration_stat_ids,
     get_last_stat,
     get_sum_before,
     make_stat_id,
@@ -31,9 +31,13 @@ from .statistics import (
 _LOGGER = logging.getLogger(__name__)
 
 UPDATE_INTERVAL = timedelta(minutes=60)
-# GestioHome publishes about one reading a day: after a new one, there is no
-# point in asking again for a while
-MIN_READING_AGE = timedelta(hours=6)
+# GestioHome publishes about one reading a day (usually 24 h apart, rarely
+# less): after a new one, there is no point in asking again for a while. A
+# reading that comes sooner is only seen later; it still lands in its own hour
+MIN_READING_AGE = timedelta(hours=20)
+# the tabs of the web are looked at again this often, to report meters that
+# went away or appeared
+DISCOVERY_INTERVAL = timedelta(days=1)
 # the oldest date asked for on a full import (the web answers what it has)
 HISTORY_START = date(2015, 1, 1)
 # readings can reach GestioHome late, also for past days: every sync rewrites
@@ -45,17 +49,19 @@ LOOKBACK = timedelta(days=31)
 
 
 @dataclass
-class SupplyData:
-    """What the sensors show for one supply."""
+class MeterData:
+    """What the sensors show for one meter."""
 
-    meter: Meter
+    meter_id: str
+    name: str
+    stat_id: str
+    unit: str | None = None
     readings: list[Reading] = field(default_factory=list)
     last_reading: Reading | None = None
     last_day: float | None = None
     last_day_date: date | None = None
     month: float | None = None
     last_month: float | None = None
-    stat_id: str | None = None
 
 
 type GestioHomeConfigEntry = ConfigEntry[GestioHomeCoordinator]
@@ -64,7 +70,7 @@ type GestioHomeConfigEntry = ConfigEntry[GestioHomeCoordinator]
 def summarize(readings: list[Reading], now: datetime) -> dict:
     """Compute the last day with readings, this month and last month.
 
-    Same daily figures as the statistics (and the GestioHome web).
+    Same daily figures as the GestioHome web.
     """
 
     days = daily_consumption(readings)
@@ -85,7 +91,7 @@ def summarize(readings: list[Reading], now: datetime) -> dict:
     }
 
 
-class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, SupplyData]]):
+class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, MeterData]]):
     """Sync GestioHome readings into statistics and sensor data."""
 
     config_entry: GestioHomeConfigEntry
@@ -101,9 +107,7 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, SupplyData]]):
         self.client = client
         self.id: str = entry.data[CONF_SCODE]
         self.dwelling: str = entry.title
-        self._meters: dict[str, Meter] | None = {
-            key: Meter(*value) for key, value in entry.data.get(CONF_METERS, {}).items()
-        } or None
+        self._last_discovery: datetime | None = None
         super().__init__(
             hass,
             _LOGGER,
@@ -113,57 +117,97 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, SupplyData]]):
             always_update=False,
         )
 
-    async def _async_update_data(self) -> dict[str, SupplyData]:
+    @property
+    def meters(self) -> dict[str, dict[str, str]]:
+        """Return the meters the user chose: {meter id: {name, stat}}."""
+        return self.config_entry.options.get(CONF_METERS, {})
+
+    def stat_id(self, meter_id: str) -> str:
+        """Return the statistic ID of a chosen meter (fixed when it was added).
+
+        Like edata's ``edata:<scups>_consumption``.
+        """
+        return make_stat_id(self.id, f"{self.meters[meter_id][CONF_STAT]}_consumption")
+
+    async def _async_update_data(self) -> dict[str, MeterData]:
         try:
-            if self._meters is None:
-                await self._discover()
-            data: dict[str, SupplyData] = {}
-            for supply in SUPPLIES:
-                if (meter := (self._meters or {}).get(supply.key)) is None:
-                    continue
-                data[supply.key] = await self._sync_supply(supply, meter)
+            now = dt_util.utcnow()
+            if (
+                self._last_discovery is None
+                or now - self._last_discovery >= DISCOVERY_INTERVAL
+            ):
+                await self._check_meters()
+                self._last_discovery = now
+            data: dict[str, MeterData] = {}
+            for meter_id in self.meters:
+                data[meter_id] = await self._sync_meter(meter_id)
         except InvalidAuth as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except CannotConnect as err:
             raise UpdateFailed(f"GestioHome: {err}") from err
         return data
 
-    async def _discover(self) -> None:
-        """Find the dwelling and its meter for each supply."""
+    async def _check_meters(self) -> None:
+        """Report chosen meters the web no longer lists, and new ones.
 
-        await self.client.async_login()
-        meters: dict[str, Meter] = {}
-        for supply in SUPPLIES:
-            found = await self.client.async_get_meters(supply.page)
-            if not found:
-                _LOGGER.debug("%s: no %s meter", self.id, supply.key)
+        Nothing changes on its own: the user decides in the integration's
+        options. A meter is the same one only if its numeric ID is the same.
+        """
+
+        _, found = await self.client.async_discover()
+        found_ids = {meter.meter_id: meter for meter in found}
+        entry_id = self.config_entry.entry_id
+        for meter_id, meter in self.meters.items():
+            issue_id = f"meter_missing_{entry_id}_{meter_id}"
+            if meter_id in found_ids:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
                 continue
-            if len(found) > 1:
-                _LOGGER.warning(
-                    "%s: several %s meters %s, using the first one",
-                    self.id,
-                    supply.key,
-                    found,
-                )
-            meters[supply.key] = found[0]
-        if not meters:
-            raise CannotConnect("no meter found on any supply page")
-        _LOGGER.info("%s: meters found %s", self.id, meters)
-        self._meters = meters
-        stored = {k: [m.meter_id, m.name] for k, m in meters.items()}
-        if stored != self.config_entry.data.get(CONF_METERS):
-            # a meter appeared, went away or was replaced: reload with it
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, data={**self.config_entry.data, CONF_METERS: stored}
+            _LOGGER.warning(
+                "%s: GestioHome no longer lists meter %s (%s)",
+                self.id,
+                meter_id,
+                meter[CONF_NAME],
             )
-            self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="meter_missing",
+                translation_placeholders={
+                    "name": meter[CONF_NAME],
+                    "meter_id": meter_id,
+                    "stat_id": self.stat_id(meter_id),
+                },
+            )
+        known = set(self.config_entry.options.get(CONF_KNOWN, [])) | set(self.meters)
+        new: list[Meter] = [m for m in found if m.meter_id not in known]
+        issue_id = f"new_meters_{entry_id}"
+        if not new:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        _LOGGER.info("%s: new meters %s", self.id, new)
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="new_meters",
+            translation_placeholders={
+                "dwelling": self.dwelling,
+                "meters": ", ".join(f"{m.tab} {m.meter_id}" for m in new),
+            },
+        )
 
-    async def _sync_supply(self, supply: Supply, meter: Meter) -> SupplyData:
-        """Fetch new readings of a supply and extend its statistic."""
+    async def _sync_meter(self, meter_id: str) -> MeterData:
+        """Fetch new readings of a meter and extend its statistic."""
 
-        previous = (self.data or {}).get(supply.key)
+        name = self.meters[meter_id][CONF_NAME]
+        stat_id = self.stat_id(meter_id)
+        previous = (self.data or {}).get(meter_id)
         now = dt_util.utcnow()
-        stat_id = make_stat_id(self.id, supply.key)
         last_start, _, _ = await get_last_stat(self.hass, stat_id)
 
         if (
@@ -172,6 +216,7 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, SupplyData]]):
             and now - previous.last_reading.datetime < MIN_READING_AGE
             and last_start > EPOCH
         ):
+            previous.name = name
             return previous
 
         tz = dt_util.get_default_time_zone()
@@ -186,16 +231,16 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, SupplyData]]):
         else:
             since = EPOCH
             start = HISTORY_START
-        readings = await self.client.async_get_readings(
-            meter.meter_id, start, today, tz
-        )
+        answer = await self.client.async_get_readings(meter_id, start, today, tz)
+        readings = answer.readings
         if since > EPOCH and readings and readings[0].datetime >= since:
             # a gap in the readings longer than the look-back: ask for it all
-            readings = await self.client.async_get_readings(
-                meter.meter_id, HISTORY_START, today, tz
+            answer = await self.client.async_get_readings(
+                meter_id, HISTORY_START, today, tz
             )
+            readings = answer.readings
 
-        # the last days are written again, with the real day of each reading:
+        # the last days are written again, each reading in its own hour:
         # readings that reached GestioHome late land where they belong (the
         # recorder overwrites rows with the same start)
         base_sum = (
@@ -204,15 +249,23 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, SupplyData]]):
         rows = build_statistics(readings, since, base_sum)
         if rows:
             _LOGGER.debug(
-                "%s: %s, %d days up to %s",
+                "%s: %s, %d hours up to %s",
                 self.id,
-                supply.key,
+                meter_id,
                 len(rows),
                 rows[-1]["start"],
             )
-            add_statistics(self.hass, create_metadata(stat_id, supply), rows, self.id)
+            add_statistics(
+                self.hass, create_metadata(stat_id, name, answer.unit), rows, self.id
+            )
 
-        result = SupplyData(meter=meter, readings=readings, stat_id=stat_id)
+        result = MeterData(
+            meter_id=meter_id,
+            name=name,
+            stat_id=stat_id,
+            unit=answer.unit,
+            readings=readings,
+        )
         if readings:
             result.last_reading = readings[-1]
             summary = summarize(readings, now)
@@ -223,16 +276,43 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, SupplyData]]):
         return result
 
     async def async_soft_reset(self) -> None:
-        """Clear this entry's statistics and rebuild them from GestioHome."""
+        """Rebuild the statistic of each chosen meter from its whole history.
 
-        stat_ids = await get_integration_stat_ids(self.hass, self.id)
-        await clear_statistics(self.hass, stat_ids, self.id)
+        A statistic is only cleared once GestioHome has given the readings to
+        build it again: a meter the web no longer serves keeps its statistic.
+        """
+
+        tz = dt_util.get_default_time_zone()
+        today = dt_util.as_local(dt_util.utcnow()).date()
+        try:
+            for meter_id, meter in self.meters.items():
+                answer = await self.client.async_get_readings(
+                    meter_id, HISTORY_START, today, tz
+                )
+                stat_id = self.stat_id(meter_id)
+                if not answer.readings:
+                    _LOGGER.warning(
+                        "%s: no readings for meter %s, keeping %s as it is",
+                        self.id,
+                        meter_id,
+                        stat_id,
+                    )
+                    continue
+                await clear_statistics(self.hass, [stat_id], self.id)
+                add_statistics(
+                    self.hass,
+                    create_metadata(stat_id, meter[CONF_NAME], answer.unit),
+                    build_statistics(answer.readings, EPOCH, 0.0),
+                    self.id,
+                )
+        except (CannotConnect, InvalidAuth) as err:
+            raise HomeAssistantError(f"GestioHome: {err}") from err
         self.data = {}
         await self.async_refresh()
 
     async def async_force_sync(self) -> None:
-        """Ask GestioHome again right away, also for the meters."""
+        """Ask GestioHome again right away, also for the meters it lists."""
 
-        self._meters = None
+        self._last_discovery = None
         self.data = {}
         await self.async_refresh()
