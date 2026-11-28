@@ -138,7 +138,7 @@ async def test_statistics_are_recorded(
     """Rows reach the recorder and get_last_stat reads them back."""
     stat_id = make_stat_id("est9", "calor_2")
     rows = build_statistics(build_readings(5), EPOCH, 0.0)
-    add_statistics(hass, create_metadata(stat_id, "Calor", "kWh"), rows, "est9")
+    add_statistics(hass, create_metadata(stat_id, "kWh"), rows, "est9")
     await async_wait_recording_done(hass)
 
     last_start, last_sum, last_state = await get_last_stat(hass, stat_id)
