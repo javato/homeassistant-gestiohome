@@ -85,6 +85,9 @@ async def test_setup_imports_history(
     assert float(state.state) == readings[-1].value
     # whole kWh, shown as GestioHome gives them: no ".0"
     assert state.state == str(int(readings[-1].value))
+    # and HA does not add its own default decimals to them
+    entry_options = registry.async_get(entity_id).options
+    assert entry_options["sensor"]["suggested_display_precision"] == 0
     assert state.attributes["unit_of_measurement"] == "kWh"
     assert state.attributes["statistic_id"] == STAT_ID
     # no state class: Home Assistant must not build statistics from it
