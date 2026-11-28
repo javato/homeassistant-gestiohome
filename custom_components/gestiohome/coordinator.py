@@ -256,7 +256,7 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, MeterData]]):
                 rows[-1]["start"],
             )
             add_statistics(
-                self.hass, create_metadata(stat_id, name, answer.unit), rows, self.id
+                self.hass, create_metadata(stat_id, answer.unit), rows, self.id
             )
 
         result = MeterData(
@@ -285,7 +285,7 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, MeterData]]):
         tz = dt_util.get_default_time_zone()
         today = dt_util.as_local(dt_util.utcnow()).date()
         try:
-            for meter_id, meter in self.meters.items():
+            for meter_id in self.meters:
                 answer = await self.client.async_get_readings(
                     meter_id, HISTORY_START, today, tz
                 )
@@ -301,7 +301,7 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, MeterData]]):
                 await clear_statistics(self.hass, [stat_id], self.id)
                 add_statistics(
                     self.hass,
-                    create_metadata(stat_id, meter[CONF_NAME], answer.unit),
+                    create_metadata(stat_id, answer.unit),
                     build_statistics(answer.readings, EPOCH, 0.0),
                     self.id,
                 )

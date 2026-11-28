@@ -76,14 +76,15 @@ def make_stat_id(integration_id: str, suffix: str) -> str:
     return f"{DOMAIN}:{integration_id}_{suffix}"
 
 
-def create_metadata(stat_id: str, name: str, unit: str | None) -> StatisticMetaData:
+def create_metadata(stat_id: str, unit: str | None) -> StatisticMetaData:
     """Create the metadata of a meter statistic."""
 
     ha_unit, device_class = unit_info(unit)
     return StatisticMetaData(
         mean_type=StatisticMeanType.NONE,
         has_sum=True,
-        name=f"GestioHome {name}",
+        # like edata: the statistic shows as its ID, which never changes
+        name=stat_id,
         source=DOMAIN,
         statistic_id=stat_id,
         unit_class=device_class.value if device_class else None,
