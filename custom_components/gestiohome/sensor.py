@@ -165,6 +165,12 @@ class GestioHomeMeterSensor(GestioHomeEntity, SensorEntity):
         return unit_info(data.unit)[1] if data else None
 
     @property
+    def suggested_display_precision(self) -> int | None:
+        """Show the decimals GestioHome gives this meter, not the HA default."""
+        data = self._meter_data
+        return data.decimals if data else None
+
+    @property
     def native_value(self):
         """Return the value."""
         if (data := self._meter_data) is None:

@@ -46,6 +46,8 @@ REWRITE_DAYS = 31
 # extra days asked for before the rewritten ones, so the reading right before
 # them is always there (readings have gaps)
 LOOKBACK = timedelta(days=31)
+# the sensors never show more decimals than this
+MAX_DECIMALS = 3
 
 
 @dataclass
@@ -62,6 +64,19 @@ class MeterData:
     last_day_date: date | None = None
     month: float | None = None
     last_month: float | None = None
+    # decimals GestioHome gives the readings of this meter (0 for whole kWh)
+    decimals: int | None = None
+
+
+def reading_decimals(readings: list[Reading]) -> int:
+    """Return the most decimals any reading has, up to MAX_DECIMALS."""
+
+    most = 0
+    for reading in readings:
+        text = repr(reading.value)
+        if "." in text and not float(reading.value).is_integer():
+            most = max(most, len(text.split(".")[1]))
+    return min(most, MAX_DECIMALS)
 
 
 type GestioHomeConfigEntry = ConfigEntry[GestioHomeCoordinator]
@@ -268,6 +283,7 @@ class GestioHomeCoordinator(DataUpdateCoordinator[dict[str, MeterData]]):
         )
         if readings:
             result.last_reading = readings[-1]
+            result.decimals = reading_decimals(readings)
             summary = summarize(readings, now)
             result.last_day = summary.get("last_day")
             result.last_day_date = summary.get("last_day_date")
